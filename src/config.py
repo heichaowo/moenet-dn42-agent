@@ -29,6 +29,19 @@ class AgentConfig:
     
     # Agent info
     agent_version: str = "2.1.0"
+    
+    # API Server (for bot commands)
+    api_host: str = "0.0.0.0"
+    api_port: int = 54321
+    api_secret: str = ""
+    
+    # Network info
+    dn42_ipv4: str = ""
+    dn42_ipv6: str = ""
+    dn42_link_local: str = ""
+    wg_public_key: str = ""
+    is_open: bool = True
+    max_peers: int = 0
 
 
 def load_config(config_path: Optional[str] = None) -> AgentConfig:

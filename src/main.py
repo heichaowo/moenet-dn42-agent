@@ -38,12 +38,16 @@ logger = logging.getLogger("moenet-agent")
 
 async def main():
     """Main entry point."""
+    from aiohttp import web
+    from api.server import create_app
+    
     # Load configuration
     config = load_config()
     
     logger.info(f"MoeNet DN42 Agent starting...")
     logger.info(f"Node: {config.node_name}")
     logger.info(f"Control Plane: {config.control_plane_url}")
+    logger.info(f"API Server: {config.api_host}:{config.api_port}")
     
     # Initialize components
     client = ControlPlaneClient(
@@ -65,6 +69,14 @@ async def main():
         heartbeat_interval=config.heartbeat_interval,
     )
     
+    # Create API server
+    api_app = create_app()
+    api_runner = web.AppRunner(api_app)
+    await api_runner.setup()
+    api_site = web.TCPSite(api_runner, config.api_host, config.api_port)
+    await api_site.start()
+    logger.info(f"✅ API server started on port {config.api_port}")
+    
     # Handle shutdown signals
     loop = asyncio.get_event_loop()
     
@@ -82,6 +94,7 @@ async def main():
         logger.error(f"Daemon error: {e}")
         raise
     finally:
+        await api_runner.cleanup()
         await client.close()
     
     logger.info("MoeNet DN42 Agent stopped")
