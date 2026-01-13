@@ -1,0 +1,14 @@
+# DN42 BGP Peer Configuration
+# Peer: AS{{ peer.asn }} ({{ peer.name }})
+
+protocol bgp dn42_{{ peer.asn }} from dnpeers {
+    neighbor {{ peer.bgp.peer_ipv6 or peer.bgp.peer_ipv4 }} as {{ peer.asn }};
+    {% if peer.bgp.peer_ipv4 and peer.bgp.peer_ipv6 %}
+    ipv4 { import filter dn42_import_filter; export filter dn42_export_filter; extended next hop on; };
+    ipv6 { import filter dn42_import_filter; export filter dn42_export_filter; };
+    {% elif peer.bgp.peer_ipv4 %}
+    ipv4 { import filter dn42_import_filter; export filter dn42_export_filter; };
+    {% else %}
+    ipv6 { import filter dn42_import_filter; export filter dn42_export_filter; };
+    {% endif %}
+}

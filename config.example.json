@@ -1,0 +1,12 @@
+{
+    "control_plane_url": "https://cp.moenet.work",
+    "control_plane_token": "",
+    "node_name": "jp.edge.moenet.work",
+    "sync_interval": 60,
+    "heartbeat_interval": 30,
+    "state_path": "/var/lib/moenet-agent/last_state.json",
+    "bird_config_dir": "/etc/bird/peers.d",
+    "bird_ctl": "/var/run/bird/bird.ctl",
+    "wg_config_dir": "/etc/wireguard",
+    "wg_private_key": ""
+}

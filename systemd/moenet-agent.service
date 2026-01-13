@@ -1,0 +1,30 @@
+[Unit]
+Description=MoeNet DN42 Agent
+Documentation=https://github.com/moenet/moenet-dn42-agent
+After=network.target bird.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/moenet-agent
+ExecStart=/usr/bin/python3 /opt/moenet-agent/main.py
+Restart=always
+RestartSec=10
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+# Security hardening
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=true
+ReadOnlyDirectories=/
+ReadWriteDirectories=/etc/wireguard /etc/bird/peers.d /var/lib/moenet-agent /var/run/bird
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=moenet-agent
+
+[Install]
+WantedBy=multi-user.target

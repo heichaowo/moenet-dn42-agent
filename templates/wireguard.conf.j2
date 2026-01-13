@@ -1,0 +1,12 @@
+# WireGuard Interface: {{ interface_name }}
+
+[Interface]
+PrivateKey = {{ local_private_key }}
+{% if local_address %}Address = {{ local_address }}{% endif %}
+{% if listen_port %}ListenPort = {{ listen_port }}{% endif %}
+
+[Peer]
+PublicKey = {{ peer_public_key }}
+{% if peer_endpoint %}Endpoint = {{ peer_endpoint }}{% endif %}
+AllowedIPs = {{ allowed_ips | join(', ') }}
+PersistentKeepalive = 25
