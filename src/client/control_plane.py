@@ -106,6 +106,54 @@ class ControlPlaneClient:
             logger.error(f"Mesh key registration error: {e}")
             return False
     
+    async def register_node(
+        self,
+        agent_version: str,
+        region: str = "unknown",
+        ipv4: str = None,
+        ipv6: str = None,
+        dn42_ipv4: str = None,
+        dn42_ipv6: str = None,
+        node_id: int = None,
+        loopback_ipv6: str = None,
+        mesh_public_key: str = None,
+        is_rr: bool = False,
+    ) -> Optional[dict]:
+        """Register this node with control-plane (auto-create if not exists)."""
+        try:
+            session = await self._get_session()
+            payload = {
+                "hostname": self.node_name,
+                "agent_version": agent_version,
+                "region": region,
+                "is_rr": is_rr,
+            }
+            if ipv4:
+                payload["ipv4"] = ipv4
+            if ipv6:
+                payload["ipv6"] = ipv6
+            if dn42_ipv4:
+                payload["dn42_ipv4"] = dn42_ipv4
+            if dn42_ipv6:
+                payload["dn42_ipv6"] = dn42_ipv6
+            if node_id:
+                payload["node_id"] = node_id
+            if loopback_ipv6:
+                payload["loopback_ipv6"] = loopback_ipv6
+            if mesh_public_key:
+                payload["mesh_public_key"] = mesh_public_key
+            
+            async with session.post(f"{self.base_url}/api/v1/agent/register", json=payload) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    logger.info(f"Node registration: {result['status']} - {result['node_name']}")
+                    return result
+                logger.error(f"Node registration failed: HTTP {resp.status}")
+                return None
+        except Exception as e:
+            logger.error(f"Registration error: {e}")
+            return None
+    
     @staticmethod
     def compute_config_hash(config: dict) -> str:
         config_str = json.dumps(config.get("peers", []), sort_keys=True)

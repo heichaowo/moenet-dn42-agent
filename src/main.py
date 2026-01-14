@@ -85,6 +85,22 @@ async def main():
         mesh_port=51820,
     )
     
+    # Register node with control plane (auto-create if not exists)
+    logger.info("Registering with control plane...")
+    try:
+        is_rr = "rr" in config.node_name.lower()
+        registration = await client.register_node(
+            agent_version=config.agent_version,
+            region=getattr(config, 'region', 'unknown'),
+            dn42_ipv4=getattr(config, 'dn42_ipv4', None),
+            dn42_ipv6=getattr(config, 'dn42_ipv6', None),
+            is_rr=is_rr,
+        )
+        if registration:
+            logger.info(f"✅ Node registered: {registration.get('status')}")
+    except Exception as e:
+        logger.warning(f"Node registration failed (will retry): {e}")
+    
     # Initialize mesh network (generate keys, register with CP)
     logger.info("Initializing mesh network...")
     try:
