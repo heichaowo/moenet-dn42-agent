@@ -43,9 +43,9 @@ def birdc(cmd: str) -> Optional[str]:
 @web.middleware
 async def auth_middleware(request, handler):
     """Verify API secret token."""
-    if config.api_secret:
+    if config.api_token:
         auth = request.headers.get("Authorization", "")
-        if auth != f"Bearer {config.api_secret}":
+        if auth != f"Bearer {config.api_token}":
             return web.json_response({"error": "Unauthorized"}, status=401)
     return await handler(request)
 
