@@ -8,5 +8,12 @@
     "bird_config_dir": "/etc/bird/peers.d",
     "bird_ctl": "/var/run/bird/bird.ctl",
     "wg_config_dir": "/etc/wireguard",
-    "wg_private_key": ""
+    "api_host": "0.0.0.0",
+    "api_port": 54321,
+    "api_token": "",
+    "dn42_ipv4": "",
+    "dn42_ipv6": "",
+    "dn42_link_local": "",
+    "is_open": true,
+    "max_peers": 50
 }

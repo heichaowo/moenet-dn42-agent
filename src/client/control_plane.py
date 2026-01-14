@@ -80,6 +80,32 @@ class ControlPlaneClient:
             logger.error(f"State report error: {e}")
             return False
     
+    async def get_mesh_config(self) -> Optional[dict[str, Any]]:
+        """Fetch mesh network configuration."""
+        try:
+            session = await self._get_session()
+            url = f"{self.base_url}/api/v1/mesh/config/{self.node_name}"
+            async with session.get(url) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                logger.error(f"Failed to fetch mesh config: HTTP {resp.status}")
+                return None
+        except Exception as e:
+            logger.error(f"Mesh config error: {e}")
+            return None
+    
+    async def register_mesh_key(self, public_key: str) -> bool:
+        """Register mesh WireGuard public key with control plane."""
+        try:
+            session = await self._get_session()
+            url = f"{self.base_url}/api/v1/mesh/register-key/{self.node_name}"
+            payload = {"public_key": public_key}
+            async with session.post(url, json=payload) as resp:
+                return resp.status == 200
+        except Exception as e:
+            logger.error(f"Mesh key registration error: {e}")
+            return False
+    
     @staticmethod
     def compute_config_hash(config: dict) -> str:
         config_str = json.dumps(config.get("peers", []), sort_keys=True)

@@ -26,6 +26,7 @@ from renderer.wireguard import WireGuardRenderer
 from executor.bird import BirdExecutor
 from executor.wireguard import WireGuardExecutor
 from daemon.sync import SyncDaemon
+from daemon.mesh_sync import MeshSync
 
 # Configure logging
 logging.basicConfig(
@@ -60,14 +61,37 @@ async def main():
     state_manager.set_node_id(config.node_name)
     
     # Create sync daemon
+    bird_executor = BirdExecutor(config.bird_config_dir, config.bird_ctl)
+    wg_executor = WireGuardExecutor(config.wg_config_dir)
+    
     daemon = SyncDaemon(
         client=client,
         state_manager=state_manager,
-        bird_executor=BirdExecutor(config.bird_config_dir, config.bird_ctl),
-        wg_executor=WireGuardExecutor(config.wg_config_dir, config.wg_private_key),
+        bird_executor=bird_executor,
+        wg_executor=wg_executor,
         sync_interval=config.sync_interval,
         heartbeat_interval=config.heartbeat_interval,
     )
+    
+    # Create mesh sync for IGP underlay
+    # Extract node_id from config (e.g., jp.edge -> 2)
+    node_id = getattr(config, 'node_id', 0) or hash(config.node_name) % 100 + 1
+    
+    mesh_sync = MeshSync(
+        client=client,
+        wg_executor=wg_executor,
+        bird_executor=bird_executor,
+        node_id=node_id,
+        mesh_port=51820,
+    )
+    
+    # Initialize mesh network (generate keys, register with CP)
+    logger.info("Initializing mesh network...")
+    try:
+        await mesh_sync.sync_mesh()
+        logger.info("✅ Mesh network initialized")
+    except Exception as e:
+        logger.warning(f"Mesh sync failed (will retry): {e}")
     
     # Create API server
     api_app = create_app()
