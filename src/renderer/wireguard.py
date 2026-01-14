@@ -23,6 +23,7 @@ class WireGuardRenderer:
             local_address=local_addr,
             listen_port=tunnel.get("listen_port"),
             peer_public_key=tunnel.get("peer_public_key"),
+            preshared_key=tunnel.get("preshared_key"),  # PSK support
             peer_endpoint=tunnel.get("endpoint"),
             allowed_ips=allowed_ips,
         )
