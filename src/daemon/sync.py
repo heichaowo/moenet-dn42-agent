@@ -7,6 +7,7 @@ from client.control_plane import ControlPlaneClient
 from state.manager import StateManager
 from executor.bird import BirdExecutor
 from executor.wireguard import WireGuardExecutor
+from executor.firewall import FirewallExecutor
 from renderer.bird import BirdRenderer
 from renderer.wireguard import WireGuardRenderer
 
@@ -20,6 +21,7 @@ class SyncDaemon:
         state_manager: StateManager,
         bird_executor: BirdExecutor,
         wg_executor: WireGuardExecutor,
+        firewall_executor: FirewallExecutor = None,
         sync_interval: int = 60,
         heartbeat_interval: int = 30,
     ):
@@ -27,6 +29,7 @@ class SyncDaemon:
         self.state = state_manager
         self.bird = bird_executor
         self.wg = wg_executor
+        self.firewall = firewall_executor or FirewallExecutor()
         self.bird_renderer = BirdRenderer()
         self.wg_renderer = WireGuardRenderer()
         self.sync_interval = sync_interval
@@ -64,16 +67,34 @@ class SyncDaemon:
     
     def _add_peer(self, peer: dict):
         asn = peer["asn"]
+        listen_port = peer.get("listen_port") or self._calculate_listen_port(asn)
+        
+        # Open firewall port for WireGuard
         if peer.get("tunnel", {}).get("type") == "wireguard":
+            self.firewall.allow_port(listen_port)
             config = self.wg_renderer.render_interface(peer, self.wg.private_key, "")
             self.wg.write_interface(asn, config)
             self.wg.up(asn)
+        
         self.bird.write_peer(asn, self.bird_renderer.render_peer(peer))
+    
+    def _calculate_listen_port(self, remote_as: int) -> int:
+        """Calculate WireGuard listen port based on remote ASN."""
+        if 4242420000 <= remote_as <= 4242429999:
+            return 30000 + (remote_as % 10000)
+        elif 4201270000 <= remote_as <= 4201279999:
+            return 40000 + (remote_as % 10000)
+        else:
+            return 50000 + (remote_as % 10000)
     
     def _update_peer(self, peer: dict):
         self._add_peer(peer)
     
     def _remove_peer(self, asn: int):
+        # Close firewall port
+        listen_port = self._calculate_listen_port(asn)
+        self.firewall.remove_port(listen_port)
+        
         self.wg.down(asn)
         self.wg.remove_interface(asn)
         self.bird.remove_peer(asn)
