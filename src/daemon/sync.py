@@ -43,6 +43,12 @@ class SyncDaemon:
             return False
         
         remote_hash = config.get("version_hash") or self.client.compute_config_hash(config)
+        
+        # Always sync iBGP (config file might be missing even if hash matches)
+        ibgp_peers = config.get("ibgp_peers", [])
+        if ibgp_peers:
+            self._sync_ibgp(ibgp_peers)
+        
         if remote_hash == self.state.get_config_hash():
             logger.info("Config up to date")
             return True
@@ -59,11 +65,6 @@ class SyncDaemon:
         
         for asn in current - new_peers:
             self._remove_peer(asn)
-        
-        # Sync iBGP peers
-        ibgp_peers = config.get("ibgp_peers", [])
-        if ibgp_peers:
-            self._sync_ibgp(ibgp_peers)
         
         self.bird.reload()
         self.state.update_applied_config(config.get("peers", []), remote_hash)
