@@ -2,13 +2,23 @@
 # Peer: AS{{ peer.asn }} ({{ peer.name }})
 
 protocol bgp dn42_{{ peer.asn }} from dnpeers {
-    neighbor {{ peer.bgp.peer_ipv6 or peer.bgp.peer_ipv4 }} as {{ peer.asn }};
-    {% if peer.bgp.peer_ipv4 and peer.bgp.peer_ipv6 %}
-    ipv4 { import filter dn42_import_filter; export filter dn42_export_filter; extended next hop on; };
+    neighbor {{ peer.bgp.dn42_ipv6 or peer.bgp.dn42_ipv4 }} as {{ peer.asn }};
+{% if peer.bgp.mpbgp %}
+    # MP-BGP enabled
+{% if peer.bgp.dn42_ipv4 and peer.bgp.dn42_ipv6 %}
+    ipv4 { import filter dn42_import_filter; export filter dn42_export_filter; {% if peer.bgp.extended_nexthop %}extended next hop on; {% endif %}};
     ipv6 { import filter dn42_import_filter; export filter dn42_export_filter; };
-    {% elif peer.bgp.peer_ipv4 %}
+{% elif peer.bgp.dn42_ipv4 %}
     ipv4 { import filter dn42_import_filter; export filter dn42_export_filter; };
-    {% else %}
+{% else %}
     ipv6 { import filter dn42_import_filter; export filter dn42_export_filter; };
-    {% endif %}
+{% endif %}
+{% else %}
+    # Single protocol (no MP-BGP)
+{% if peer.bgp.dn42_ipv4 %}
+    ipv4 { import filter dn42_import_filter; export filter dn42_export_filter; };
+{% else %}
+    ipv6 { import filter dn42_import_filter; export filter dn42_export_filter; };
+{% endif %}
+{% endif %}
 }
