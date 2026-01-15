@@ -39,8 +39,18 @@ class AgentConfig:
     dn42_ipv6: str = ""
     dn42_link_local: str = ""
     wg_public_key: str = ""
-    is_open: bool = True
-    max_peers: int = 0
+    
+    # Node display info (for auto registration to CP)
+    region: str = ""               # e.g., "JP", "HK", "US"
+    location: str = ""             # e.g., "Tokyo", "Hong Kong"
+    provider: str = ""             # e.g., "Hytron", "ACCK", "Vultr"
+    
+    # Peering settings
+    is_open: bool = True           # open_for_peer
+    max_peers: int = 0             # 0 = unlimited
+    allow_cn_peers: bool = False   # Allow Chinese Mainland peers
+    supports_ipv4: bool = True
+    supports_ipv6: bool = True
 
 
 def load_config(config_path: Optional[str] = None) -> AgentConfig:
@@ -76,8 +86,16 @@ def load_config(config_path: Optional[str] = None) -> AgentConfig:
             dn42_ipv4=data.get("dn42_ipv4", ""),
             dn42_ipv6=data.get("dn42_ipv6", ""),
             dn42_link_local=data.get("dn42_link_local", ""),
+            # Node display info
+            region=data.get("region", ""),
+            location=data.get("location", ""),
+            provider=data.get("provider", ""),
+            # Peering settings
             is_open=data.get("is_open", True),
             max_peers=data.get("max_peers", 0),
+            allow_cn_peers=data.get("allow_cn_peers", False),
+            supports_ipv4=data.get("supports_ipv4", True),
+            supports_ipv6=data.get("supports_ipv6", True),
         )
     
     # Fall back to environment variables

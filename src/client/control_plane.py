@@ -118,6 +118,14 @@ class ControlPlaneClient:
         loopback_ipv6: str = None,
         mesh_public_key: str = None,
         is_rr: bool = False,
+        # New peering settings
+        location: str = None,
+        provider: str = None,
+        allow_cn_peers: bool = False,
+        supports_ipv4: bool = True,
+        supports_ipv6: bool = True,
+        open_for_peer: bool = True,
+        max_peers: int = None,
     ) -> Optional[dict]:
         """Register this node with control-plane (auto-create if not exists)."""
         try:
@@ -127,6 +135,10 @@ class ControlPlaneClient:
                 "agent_version": agent_version,
                 "region": region,
                 "is_rr": is_rr,
+                "allow_cn_peers": allow_cn_peers,
+                "supports_ipv4": supports_ipv4,
+                "supports_ipv6": supports_ipv6,
+                "open_for_peer": open_for_peer,
             }
             if ipv4:
                 payload["ipv4"] = ipv4
@@ -142,6 +154,12 @@ class ControlPlaneClient:
                 payload["loopback_ipv6"] = loopback_ipv6
             if mesh_public_key:
                 payload["mesh_public_key"] = mesh_public_key
+            if location:
+                payload["location"] = location
+            if provider:
+                payload["provider"] = provider
+            if max_peers is not None and max_peers > 0:
+                payload["max_peers"] = max_peers
             
             async with session.post(f"{self.base_url}/api/v1/agent/register", json=payload) as resp:
                 if resp.status == 200:
