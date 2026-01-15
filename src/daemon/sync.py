@@ -60,10 +60,27 @@ class SyncDaemon:
         for asn in current - new_peers:
             self._remove_peer(asn)
         
+        # Sync iBGP peers
+        ibgp_peers = config.get("ibgp_peers", [])
+        if ibgp_peers:
+            self._sync_ibgp(ibgp_peers)
+        
         self.bird.reload()
         self.state.update_applied_config(config.get("peers", []), remote_hash)
         logger.info("Config sync complete")
         return True
+    
+    def _sync_ibgp(self, ibgp_peers: list):
+        """Sync iBGP peer configurations."""
+        from renderer.ibgp import render_ibgp_config
+        
+        ibgp_config = render_ibgp_config({
+            "local_name": self.client.node_id,
+            "local_asn": 4242420998,
+            "is_rr": any(p.get("is_rr_client") for p in ibgp_peers),  # We're RR if we have clients
+            "peers": ibgp_peers,
+        })
+        self.bird.write_ibgp(ibgp_config)
     
     def _add_peer(self, peer: dict):
         asn = peer["asn"]

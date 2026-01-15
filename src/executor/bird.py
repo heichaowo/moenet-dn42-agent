@@ -26,6 +26,17 @@ class BirdExecutor:
             path.unlink()
         return True
     
+    def write_ibgp(self, config: str) -> bool:
+        """Write iBGP configuration file."""
+        try:
+            ibgp_dir = self.config_dir.parent / "ibgp.d"
+            ibgp_dir.mkdir(parents=True, exist_ok=True)
+            (ibgp_dir / "ibgp_peers.conf").write_text(config)
+            return True
+        except Exception as e:
+            logger.error(f"Write iBGP config failed: {e}")
+            return False
+    
     def reload(self) -> bool:
         result = subprocess.run(["birdc", "-s", self.bird_ctl, "configure"], capture_output=True)
         return result.returncode == 0
