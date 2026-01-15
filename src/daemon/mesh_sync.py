@@ -4,6 +4,7 @@ Syncs WireGuard IGP mesh tunnels and Babel configuration.
 """
 import asyncio
 import logging
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -58,12 +59,54 @@ class MeshSync:
         
         return self._private_key, self._public_key
     
+    def configure_loopback(self, loopback_ipv6: str) -> bool:
+        """Configure loopback IPv6 address on lo interface.
+        
+        Args:
+            loopback_ipv6: IPv6 address to add (without /128 suffix)
+        
+        Returns:
+            True if configured successfully
+        """
+        if not loopback_ipv6:
+            return False
+        
+        # Ensure /128 suffix
+        if "/" not in loopback_ipv6:
+            loopback_ipv6 = f"{loopback_ipv6}/128"
+        
+        try:
+            # Check if already configured
+            result = subprocess.run(
+                ["ip", "-6", "addr", "show", "dev", "lo"],
+                capture_output=True, text=True
+            )
+            if loopback_ipv6.split("/")[0] in result.stdout:
+                logger.debug(f"Loopback {loopback_ipv6} already configured")
+                return True
+            
+            # Add loopback address
+            result = subprocess.run(
+                ["ip", "-6", "addr", "add", loopback_ipv6, "dev", "lo"],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0 or "exists" in result.stderr:
+                logger.info(f"Configured loopback: {loopback_ipv6}")
+                return True
+            else:
+                logger.error(f"Failed to add loopback: {result.stderr}")
+                return False
+        except Exception as e:
+            logger.error(f"Error configuring loopback: {e}")
+            return False
+    
     async def sync_mesh(self) -> bool:
         """Sync mesh network configuration.
         
         1. Get mesh config from control plane
-        2. Create/update WG IGP interfaces
-        3. Generate iBGP peer configs using loopback addresses
+        2. Configure local loopback address
+        3. Create/update WG IGP interfaces
+        4. Generate iBGP peer configs using loopback addresses
         """
         logger.info("Syncing mesh network...")
         
@@ -75,6 +118,11 @@ class MeshSync:
         if not mesh_config:
             logger.warning("No mesh config available")
             return False
+        
+        # Configure local loopback address
+        local_loopback = mesh_config.get("loopback")
+        if local_loopback:
+            self.configure_loopback(local_loopback)
         
         peers = mesh_config.get("peers", [])
         logger.info(f"Mesh peers: {len(peers)}")
@@ -125,3 +173,4 @@ class MeshSync:
         logger.info("Mesh sync complete")
         
         return True
+
