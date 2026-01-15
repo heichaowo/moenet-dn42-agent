@@ -70,12 +70,47 @@ python src/main.py
 {
   "control_plane_url": "https://cp.moenet.work",
   "control_plane_token": "your_token",
-  "node_name": "jp.edge.moenet.work",
+  "node_name": "jp-edge",
   "sync_interval": 60,
   "heartbeat_interval": 30,
-  "state_path": "/var/lib/moenet-agent/last_state.json"
+  "state_path": "/var/lib/moenet-agent/last_state.json",
+  "bird_config_dir": "/etc/bird/peers.d",
+  "bird_ctl": "/var/run/bird/bird.ctl",
+  "wg_config_dir": "/etc/wireguard",
+  "api_host": "0.0.0.0",
+  "api_port": 54321,
+  "api_token": "",
+  "dn42_ipv4": "172.22.x.x",
+  "dn42_ipv6": "fd00:xxx::1",
+  "dn42_link_local": "",
+  "region": "JP",
+  "location": "Tokyo",
+  "provider": "Aliyun",
+  "is_open": true,
+  "max_peers": 0,
+  "allow_cn_peers": false,
+  "supports_ipv4": true,
+  "supports_ipv6": true
 }
 ```
+
+### 节点显示配置
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| `region` | 地区代码 | JP, HK, US |
+| `location` | 城市名 | Tokyo, Hong Kong |
+| `provider` | 供应商 | Aliyun, Vultr |
+
+### Peering 配置
+
+| 字段 | 说明 | 默认值 |
+|------|------|--------|
+| `is_open` | 是否开放 Peering | true |
+| `max_peers` | 最大 Peer 数 (0=无限) | 0 |
+| `allow_cn_peers` | 允许中国大陆 IP | false |
+| `supports_ipv4` | 支持 IPv4 | true |
+| `supports_ipv6` | 支持 IPv6 | true |
 
 ## 与 Control-Plane 交互
 
