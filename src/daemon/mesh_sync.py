@@ -59,46 +59,59 @@ class MeshSync:
         
         return self._private_key, self._public_key
     
-    def configure_loopback(self, loopback_ipv6: str) -> bool:
-        """Configure loopback IPv6 address on lo interface.
+    def configure_loopback(self, loopback_ipv6: str, dn42_ipv4: str = None, dn42_ipv6: str = None) -> bool:
+        """Configure loopback addresses on dummy0 interface.
         
         Args:
-            loopback_ipv6: IPv6 address to add (without /128 suffix)
+            loopback_ipv6: Loopback IPv6 address (e.g., fd00:4242:7777:0::3)
+            dn42_ipv4: DN42 IPv4 address (e.g., 172.22.188.3)
+            dn42_ipv6: DN42 IPv6 address (optional)
         
         Returns:
             True if configured successfully
         """
-        if not loopback_ipv6:
-            return False
-        
-        # Ensure /128 suffix
-        if "/" not in loopback_ipv6:
-            loopback_ipv6 = f"{loopback_ipv6}/128"
-        
-        try:
-            # Check if already configured
-            result = subprocess.run(
-                ["ip", "-6", "addr", "show", "dev", "lo"],
-                capture_output=True, text=True
-            )
-            if loopback_ipv6.split("/")[0] in result.stdout:
-                logger.debug(f"Loopback {loopback_ipv6} already configured")
+        def add_addr(addr: str, dev: str = "dummy0") -> bool:
+            """Add address to interface if not already present."""
+            if not addr:
                 return True
             
-            # Add loopback address
-            result = subprocess.run(
-                ["ip", "-6", "addr", "add", loopback_ipv6, "dev", "lo"],
-                capture_output=True, text=True
-            )
-            if result.returncode == 0 or "exists" in result.stderr:
-                logger.info(f"Configured loopback: {loopback_ipv6}")
-                return True
-            else:
-                logger.error(f"Failed to add loopback: {result.stderr}")
+            # Ensure proper suffix
+            if "/" not in addr:
+                suffix = "/32" if "." in addr else "/128"
+                addr = f"{addr}{suffix}"
+            
+            try:
+                # Check if already configured
+                family = "-4" if "." in addr else "-6"
+                result = subprocess.run(
+                    ["ip", family, "addr", "show", "dev", dev],
+                    capture_output=True, text=True
+                )
+                if addr.split("/")[0] in result.stdout:
+                    logger.debug(f"Address {addr} already configured on {dev}")
+                    return True
+                
+                # Add address
+                result = subprocess.run(
+                    ["ip", family, "addr", "add", addr, "dev", dev],
+                    capture_output=True, text=True
+                )
+                if result.returncode == 0 or "exists" in result.stderr:
+                    logger.info(f"Configured {addr} on {dev}")
+                    return True
+                else:
+                    logger.error(f"Failed to add {addr}: {result.stderr}")
+                    return False
+            except Exception as e:
+                logger.error(f"Error adding address: {e}")
                 return False
-        except Exception as e:
-            logger.error(f"Error configuring loopback: {e}")
-            return False
+        
+        # Configure all addresses on dummy0
+        success = True
+        success &= add_addr(loopback_ipv6)
+        success &= add_addr(dn42_ipv4)
+        success &= add_addr(dn42_ipv6)
+        return success
     
     async def sync_mesh(self) -> bool:
         """Sync mesh network configuration.
@@ -119,10 +132,12 @@ class MeshSync:
             logger.warning("No mesh config available")
             return False
         
-        # Configure local loopback address
+        # Configure loopback addresses on dummy0 (created by Ansible)
         local_loopback = mesh_config.get("loopback")
-        if local_loopback:
-            self.configure_loopback(local_loopback)
+        dn42_ipv4 = mesh_config.get("dn42_ipv4")
+        dn42_ipv6 = mesh_config.get("dn42_ipv6")
+        if local_loopback or dn42_ipv4 or dn42_ipv6:
+            self.configure_loopback(local_loopback, dn42_ipv4, dn42_ipv6)
         
         peers = mesh_config.get("peers", [])
         logger.info(f"Mesh peers: {len(peers)}")
