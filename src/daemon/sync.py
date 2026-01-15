@@ -75,7 +75,7 @@ class SyncDaemon:
         from renderer.ibgp import render_ibgp_config
         
         ibgp_config = render_ibgp_config({
-            "local_name": self.client.node_id,
+            "local_name": self.client.node_name,
             "local_asn": 4242420998,
             "is_rr": any(p.get("is_rr_client") for p in ibgp_peers),  # We're RR if we have clients
             "peers": ibgp_peers,
