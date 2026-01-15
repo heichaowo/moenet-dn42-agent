@@ -37,7 +37,7 @@ class ControlPlaneClient:
     
     async def close(self):
         if self._session and not self._session.closed:
-            await self._session.aclose()
+            await self._session.close()
     
     async def get_config(self) -> Optional[dict[str, Any]]:
         """Fetch configuration from control-plane."""
