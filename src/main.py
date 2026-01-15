@@ -94,6 +94,8 @@ async def main():
             region=getattr(config, 'region', 'unknown'),
             location=getattr(config, 'location', ''),
             provider=getattr(config, 'provider', ''),
+            ipv4=getattr(config, 'public_ipv4', '') or None,
+            ipv6=getattr(config, 'public_ipv6', '') or None,
             dn42_ipv4=getattr(config, 'dn42_ipv4', None),
             dn42_ipv6=getattr(config, 'dn42_ipv6', None),
             is_rr=is_rr,

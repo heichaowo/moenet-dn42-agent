@@ -40,6 +40,10 @@ class AgentConfig:
     dn42_link_local: str = ""
     wg_public_key: str = ""
     
+    # Public IPs for mesh endpoint
+    public_ipv4: str = ""
+    public_ipv6: str = ""
+    
     # Node display info (for auto registration to CP)
     region: str = ""               # e.g., "JP", "HK", "US"
     location: str = ""             # e.g., "Tokyo", "Hong Kong"
