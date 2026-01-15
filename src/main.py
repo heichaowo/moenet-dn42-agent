@@ -92,9 +92,16 @@ async def main():
         registration = await client.register_node(
             agent_version=config.agent_version,
             region=getattr(config, 'region', 'unknown'),
+            location=getattr(config, 'location', ''),
+            provider=getattr(config, 'provider', ''),
             dn42_ipv4=getattr(config, 'dn42_ipv4', None),
             dn42_ipv6=getattr(config, 'dn42_ipv6', None),
             is_rr=is_rr,
+            allow_cn_peers=getattr(config, 'allow_cn_peers', False),
+            supports_ipv4=getattr(config, 'supports_ipv4', True),
+            supports_ipv6=getattr(config, 'supports_ipv6', True),
+            open_for_peer=getattr(config, 'is_open', True),
+            max_peers=getattr(config, 'max_peers', 0),
         )
         if registration:
             logger.info(f"✅ Node registered: {registration.get('status')}")
