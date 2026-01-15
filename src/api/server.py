@@ -184,21 +184,35 @@ async def list_peers(request):
 
 @routes.post("/peers/restart")
 async def restart_peer(request):
-    """Restart a peer tunnel."""
+    """Restart a peer tunnel.
+    
+    Order: BGP ↓ → WG ↓ → WG ↑ → BGP ↑
+    """
     data = await request.json()
     peer_name = data.get("peer_name", "")
     
     if not peer_name:
         return web.json_response({"error": "Missing peer_name"}, status=400)
     
-    # Restart WireGuard interface
-    result = simple_run(f"wg-quick down wg_{peer_name} && wg-quick up wg_{peer_name}", timeout=30)
+    results = []
     
-    # Restart BIRD protocol
-    birdc(f"disable {peer_name}")
-    birdc(f"enable {peer_name}")
+    # 1. Stop BGP first
+    bgp_down = birdc(f"disable {peer_name}")
+    results.append(f"BGP disable: {bgp_down or 'ok'}")
     
-    return web.json_response({"result": "restarted", "output": result})
+    # 2. Stop WireGuard
+    wg_down = simple_run(f"wg-quick down wg_{peer_name}", timeout=15)
+    results.append(f"WG down: {wg_down or 'ok'}")
+    
+    # 3. Start WireGuard
+    wg_up = simple_run(f"wg-quick up wg_{peer_name}", timeout=15)
+    results.append(f"WG up: {wg_up or 'ok'}")
+    
+    # 4. Start BGP
+    bgp_up = birdc(f"enable {peer_name}")
+    results.append(f"BGP enable: {bgp_up or 'ok'}")
+    
+    return web.json_response({"result": "restarted", "steps": results})
 
 
 # ==== Statistics Endpoints ====
