@@ -47,7 +47,8 @@ class SyncDaemon:
         # Always sync iBGP (config file might be missing even if hash matches)
         ibgp_peers = config.get("ibgp_peers", [])
         if ibgp_peers:
-            self._sync_ibgp(ibgp_peers)
+            local_ipv6 = config.get("local_ipv6") or config.get("node_info", {}).get("dn42_ipv6")
+            self._sync_ibgp(ibgp_peers, local_ipv6=local_ipv6)
         
         if remote_hash == self.state.get_config_hash():
             logger.info("Config up to date")
@@ -71,13 +72,14 @@ class SyncDaemon:
         logger.info("Config sync complete")
         return True
     
-    def _sync_ibgp(self, ibgp_peers: list):
+    def _sync_ibgp(self, ibgp_peers: list, local_ipv6: str = None):
         """Sync iBGP peer configurations."""
         from renderer.ibgp import render_ibgp_config
         
         ibgp_config = render_ibgp_config({
             "local_name": self.client.node_name,
             "local_asn": 4242420998,
+            "local_ipv6": local_ipv6,  # For source address in BGP session
             "is_rr": any(p.get("is_rr_client") for p in ibgp_peers),  # We're RR if we have clients
             "peers": ibgp_peers,
         })

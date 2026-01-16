@@ -40,6 +40,11 @@ class AgentConfig:
     dn42_link_local: str = ""
     wg_public_key: str = ""
     
+    # DN42 prefixes (from infra/group_vars/dn42_network.yml)
+    dn42_ipv4_prefix: str = "172.22.188.0/26"
+    dn42_ipv6_prefix: str = "fd00:4242:7777::/48"
+    node_id: int = 0  # Auto-assigned by Control Plane
+    
     # Public IPs for mesh endpoint
     public_ipv4: str = ""
     public_ipv6: str = ""
@@ -100,6 +105,10 @@ def load_config(config_path: Optional[str] = None) -> AgentConfig:
             allow_cn_peers=data.get("allow_cn_peers", False),
             supports_ipv4=data.get("supports_ipv4", True),
             supports_ipv6=data.get("supports_ipv6", True),
+            # DN42 prefixes
+            dn42_ipv4_prefix=data.get("dn42_ipv4_prefix", "172.22.188.0/26"),
+            dn42_ipv6_prefix=data.get("dn42_ipv6_prefix", "fd00:4242:7777::/48"),
+            node_id=data.get("node_id", 0),
         )
     
     # Fall back to environment variables

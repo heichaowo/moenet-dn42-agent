@@ -27,6 +27,7 @@ from executor.bird import BirdExecutor
 from executor.wireguard import WireGuardExecutor
 from daemon.sync import SyncDaemon
 from daemon.mesh_sync import MeshSync
+from executor.loopback import LoopbackExecutor
 
 # Configure logging
 logging.basicConfig(
@@ -74,8 +75,8 @@ async def main():
     )
     
     # Create mesh sync for IGP underlay
-    # Extract node_id from config (e.g., jp.edge -> 2)
-    node_id = getattr(config, 'node_id', 0) or hash(config.node_name) % 100 + 1
+    # Use node_id from config, or fallback to hash-based calculation
+    node_id = config.node_id if config.node_id > 0 else (hash(config.node_name) % 100 + 1)
     
     mesh_sync = MeshSync(
         client=client,
@@ -109,6 +110,16 @@ async def main():
             logger.info(f"✅ Node registered: {registration.get('status')}")
     except Exception as e:
         logger.warning(f"Node registration failed (will retry): {e}")
+    
+    # Configure loopback interface with DN42 IPs
+    logger.info("Configuring loopback interface...")
+    loopback = LoopbackExecutor(
+        dn42_ipv4_prefix=getattr(config, 'dn42_ipv4_prefix', '172.22.188.0/26'),
+        dn42_ipv6_prefix=getattr(config, 'dn42_ipv6_prefix', 'fd00:4242:7777::/48'),
+    )
+    loopback.ensure_interface_up()
+    loopback.setup_loopback(node_id)
+    logger.info("✅ Loopback interface configured")
     
     # Initialize mesh network (generate keys, register with CP)
     logger.info("Initializing mesh network...")

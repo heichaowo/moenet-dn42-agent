@@ -11,6 +11,9 @@ IBGP_TEMPLATE = """
 {% for peer in peers %}
 protocol bgp ibgp_{{ peer.name | replace('.', '_') | replace('-', '_') }} from dn42_internal {
     neighbor {{ peer.ipv6 if prefer_v6 and peer.ipv6 else peer.ipv4 }} as {{ peer.asn }};
+{% if local_ipv6 %}
+    source address {{ local_ipv6 }};
+{% endif %}
     description "iBGP {{ peer.name }}";
 {% if peer.is_rr_client and is_rr %}
     rr client;
@@ -36,6 +39,7 @@ def render_ibgp_config(config: dict, prefer_v6: bool = True) -> str:
     return template.render(
         local_name=config.get("local_name", "unknown"),
         local_asn=config.get("local_asn", 4242420998),
+        local_ipv6=config.get("local_ipv6"),  # e.g., fd00:4242:7777::4
         is_rr=config.get("is_rr", False),
         peers=config.get("peers", []),
         prefer_v6=prefer_v6,
