@@ -187,6 +187,9 @@ async def restart_peer(request):
     """Restart a peer tunnel.
     
     Order: BGP ↓ → WG ↓ → WG ↑ → BGP ↑
+    
+    peer_name should be like 'dn42_4242420337' (BIRD protocol name)
+    WG interface is 'dn42-4242420337' (hyphen instead of underscore)
     """
     data = await request.json()
     peer_name = data.get("peer_name", "")
@@ -194,18 +197,22 @@ async def restart_peer(request):
     if not peer_name:
         return web.json_response({"error": "Missing peer_name"}, status=400)
     
+    # Convert BIRD protocol name to WG interface name
+    # dn42_4242420337 -> dn42-4242420337
+    wg_interface = peer_name.replace("_", "-")
+    
     results = []
     
     # 1. Stop BGP first
     bgp_down = birdc(f"disable {peer_name}")
     results.append(f"BGP disable: {bgp_down or 'ok'}")
     
-    # 2. Stop WireGuard
-    wg_down = simple_run(f"wg-quick down wg_{peer_name}", timeout=15)
+    # 2. Stop WireGuard (use ip link, wg-quick not always available)
+    wg_down = simple_run(f"ip link set {wg_interface} down", timeout=15)
     results.append(f"WG down: {wg_down or 'ok'}")
     
     # 3. Start WireGuard
-    wg_up = simple_run(f"wg-quick up wg_{peer_name}", timeout=15)
+    wg_up = simple_run(f"ip link set {wg_interface} up", timeout=15)
     results.append(f"WG up: {wg_up or 'ok'}")
     
     # 4. Start BGP
