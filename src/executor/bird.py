@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 class BirdExecutor:
-    def __init__(self, config_dir: str = "/etc/bird/peers.d", bird_ctl: str = "/var/run/bird/bird.ctl"):
+    def __init__(self, config_dir: str = "/etc/bird/peers", bird_ctl: str = "/var/run/bird/bird.ctl"):
         self.config_dir = Path(config_dir)
         self.bird_ctl = bird_ctl
     
