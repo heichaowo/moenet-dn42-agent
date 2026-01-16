@@ -92,7 +92,7 @@ def render_mesh_interface(
     peer_node_id: int,
     peer_loopback: str,
     peer_endpoint: str | None = None,
-    peer_port: int = 51820,
+    peer_port: int = 51821,
 ) -> str:
     """Render WireGuard mesh interface configuration.
     

@@ -82,7 +82,7 @@ async def main():
         wg_executor=wg_executor,
         bird_executor=bird_executor,
         node_id=node_id,
-        mesh_port=51820,
+        mesh_port=51821,
     )
     
     # Register node with control plane (auto-create if not exists)
