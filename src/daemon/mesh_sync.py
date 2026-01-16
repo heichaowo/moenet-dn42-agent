@@ -28,7 +28,7 @@ class MeshSync:
         wg_executor: WireGuardExecutor,
         bird_executor: BirdExecutor,
         node_id: int,
-        mesh_port: int = 51820,
+        mesh_port: int = 51821,  # Use 51821 to avoid conflict with eBGP WG on 51820
     ):
         self.client = client
         self.wg = wg_executor
