@@ -117,6 +117,7 @@ class ControlPlaneClient:
         node_id: int = None,
         loopback_ipv6: str = None,
         mesh_public_key: str = None,
+        ebgp_public_key: str = None,  # eBGP WireGuard public key (different from mesh!)
         is_rr: bool = False,
         # New peering settings
         location: str = None,
@@ -154,6 +155,8 @@ class ControlPlaneClient:
                 payload["loopback_ipv6"] = loopback_ipv6
             if mesh_public_key:
                 payload["mesh_public_key"] = mesh_public_key
+            if ebgp_public_key:
+                payload["ebgp_public_key"] = ebgp_public_key
             if location:
                 payload["location"] = location
             if provider:

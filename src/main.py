@@ -114,6 +114,7 @@ async def main():
             supports_ipv6=getattr(config, 'supports_ipv6', True),
             open_for_peer=getattr(config, 'is_open', True),
             max_peers=getattr(config, 'max_peers', 0),
+            ebgp_public_key=wg_executor.public_key,  # Report eBGP WG public key
         )
         if registration:
             logger.info(f"✅ Node registered: {registration.get('status')}")
