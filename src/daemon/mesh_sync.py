@@ -72,6 +72,8 @@ class MeshSync:
         """
         def add_addr(addr: str, dev: str = "dummy0") -> bool:
             """Add address to interface if not already present."""
+            import ipaddress
+            
             if not addr:
                 return True
             
@@ -81,13 +83,23 @@ class MeshSync:
                 addr = f"{addr}{suffix}"
             
             try:
+                # Normalize the input address for comparison
+                addr_only = addr.split("/")[0]
+                if ":" in addr_only:
+                    # IPv6 - normalize to compare properly
+                    normalized_input = str(ipaddress.ip_address(addr_only))
+                else:
+                    normalized_input = addr_only
+                
                 # Check if already configured
                 family = "-4" if "." in addr else "-6"
                 result = subprocess.run(
                     ["ip", family, "addr", "show", "dev", dev],
                     capture_output=True, text=True
                 )
-                if addr.split("/")[0] in result.stdout:
+                
+                # Check if normalized address is in output
+                if normalized_input in result.stdout:
                     logger.debug(f"Address {addr} already configured on {dev}")
                     return True
                 
