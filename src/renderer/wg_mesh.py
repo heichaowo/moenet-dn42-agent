@@ -25,7 +25,7 @@ PublicKey = {{ peer.public_key }}
 {% if peer.endpoint %}
 Endpoint = {{ peer.endpoint }}:{{ peer.port }}
 {% endif %}
-AllowedIPs = fe80::/64, ff02::/16, {{ peer.loopback }}/128
+AllowedIPs = fe80::{{ peer.node_id }}/128, {{ peer.loopback }}/128
 PersistentKeepalive = 25
 
 {% endfor %}
