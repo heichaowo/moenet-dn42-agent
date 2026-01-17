@@ -1,6 +1,6 @@
 """MoeNet DN42 Agent - Mesh Network Sync
 
-Syncs WireGuard IGP mesh tunnels and OSPFv3 configuration.
+Syncs WireGuard IGP mesh tunnels and Babel configuration.
 Uses single WireGuard interface with multiple peers to avoid port conflicts.
 """
 import asyncio
@@ -11,7 +11,7 @@ from typing import Optional
 
 from client.control_plane import ControlPlaneClient
 from renderer.wg_mesh import get_or_create_mesh_key, render_mesh_config
-from renderer.ospf import render_ospf_neighbors
+from renderer.babel import render_babel_config, render_ibgp_peer
 from executor.wireguard import WireGuardExecutor
 from executor.bird import BirdExecutor
 
@@ -172,6 +172,26 @@ class MeshSync:
         except Exception as e:
             logger.warning(f"Error configuring link-local: {e}")
     
+    def _set_mesh_mtu(self, mtu: int = 1400):
+        """Set MTU on mesh interface.
+        
+        MTU should be reduced for WireGuard overhead:
+        - Ethernet MTU: 1500
+        - WireGuard overhead: ~60 bytes (IPv6) or ~80 bytes (IPv4+IPv6)
+        - Safe value: 1400
+        
+        Args:
+            mtu: MTU value (default 1400)
+        """
+        try:
+            subprocess.run(
+                ["ip", "link", "set", "dev", MESH_INTERFACE_NAME, "mtu", str(mtu)],
+                capture_output=True, check=True
+            )
+            logger.debug(f"Set MTU {mtu} on {MESH_INTERFACE_NAME}")
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Failed to set MTU: {e}")
+    
     async def sync_mesh(self) -> bool:
         """Sync mesh network configuration.
         
@@ -230,22 +250,21 @@ class MeshSync:
         # Write and bring up the single mesh interface
         self.wg.write_interface(MESH_INTERFACE_NAME, config)
         self.wg.up(MESH_INTERFACE_NAME)
+        
+        # Set MTU to 1400 for WireGuard overhead safety
+        self._set_mesh_mtu(1400)
+        
         logger.info(f"Configured mesh interface: {MESH_INTERFACE_NAME} with {len(peers)} peers")
         
-        # Add link-local IPv6 address for OSPFv3 (fe80::{node_id})
-        # This is required for OSPFv3 unicast hellos on the mesh interface
+        # Add link-local IPv6 address for Babel (fe80::{node_id})
+        # This is required for Babel neighbor discovery and route exchange
         self._configure_mesh_link_local()
 
-        # Write OSPFv3 neighbors config (PTMP mode uses unicast, not multicast)
-        ospf_peers = [{
-            "name": peer["name"],
-            "node_id": peer["node_id"],
-            "link_local": f"fe80::{peer['node_id']}",
-        } for peer in peers]
-        ospf_config = render_ospf_neighbors(ospf_peers)
-        ospf_path = Path(self.bird.config_dir) / "ospf_neighbors.conf"
-        ospf_path.write_text(ospf_config)
-        logger.info("Updated OSPFv3 neighbors configuration")
+        # Write Babel config
+        babel_config = render_babel_config()
+        babel_path = Path(self.bird.config_dir).parent / "babel.conf"
+        babel_path.write_text(babel_config)
+        logger.info("Updated Babel configuration")
         
         # NOTE: iBGP peers are now managed by SyncDaemon to prevent duplication
         
