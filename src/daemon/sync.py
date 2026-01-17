@@ -52,7 +52,18 @@ class SyncDaemon:
             local_ipv6 = config.get("local_ipv6") or config.get("node_info", {}).get("dn42_ipv6")
             self._sync_ibgp(ibgp_peers, local_ipv6=local_ipv6)
         
-        if remote_hash == self.state.get_config_hash():
+        # Check if any expected peer config files are missing (force regeneration)
+        needs_regeneration = False
+        for peer in config.get("peers", []):
+            asn = peer["asn"]
+            bird_path = self.bird.peers_dir / f"dn42_{asn}.conf"
+            wg_path = self.wg.config_dir / f"dn42-{asn}.conf"
+            if not bird_path.exists() or not wg_path.exists():
+                logger.info(f"Missing config for AS{asn}, forcing regeneration")
+                needs_regeneration = True
+                break
+        
+        if remote_hash == self.state.get_config_hash() and not needs_regeneration:
             logger.info("Config up to date")
             return True
         
