@@ -257,7 +257,11 @@ async def get_peer_stats(request):
     peer_name = request.match_info["peer_name"]
     
     bird_result = birdc(f"show protocols all {peer_name}")
-    wg_result = simple_run(f"wg show wg_{peer_name}", timeout=10)
+    
+    # Convert BIRD protocol name to WG interface name
+    # dn42_4242423374 -> dn42-4242423374
+    wg_interface = peer_name.replace("_", "-")
+    wg_result = simple_run(f"wg show {wg_interface}", timeout=10)
     
     return web.json_response({
         "peer_name": peer_name,
