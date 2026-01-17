@@ -1,6 +1,6 @@
 """MoeNet DN42 Agent - Mesh Network Sync
 
-Syncs WireGuard IGP mesh tunnels and Babel configuration.
+Syncs WireGuard IGP mesh tunnels and OSPFv3 configuration.
 Uses single WireGuard interface with multiple peers to avoid port conflicts.
 """
 import asyncio
@@ -11,7 +11,7 @@ from typing import Optional
 
 from client.control_plane import ControlPlaneClient
 from renderer.wg_mesh import get_or_create_mesh_key, render_mesh_config
-from renderer.babel import render_babel_config, render_ibgp_peer
+from renderer.ospf import render_ospf_neighbors
 from executor.wireguard import WireGuardExecutor
 from executor.bird import BirdExecutor
 
@@ -232,15 +232,20 @@ class MeshSync:
         self.wg.up(MESH_INTERFACE_NAME)
         logger.info(f"Configured mesh interface: {MESH_INTERFACE_NAME} with {len(peers)} peers")
         
-        # Add link-local IPv6 address for Babel (fe80::{node_id})
-        # This is required for Babel to work on the mesh interface
+        # Add link-local IPv6 address for OSPFv3 (fe80::{node_id})
+        # This is required for OSPFv3 unicast hellos on the mesh interface
         self._configure_mesh_link_local()
 
-        # Write Babel config
-        babel_config = render_babel_config()
-        babel_path = Path(self.bird.config_dir).parent / "babel.conf"
-        babel_path.write_text(babel_config)
-        logger.info("Updated Babel configuration")
+        # Write OSPFv3 neighbors config (PTMP mode uses unicast, not multicast)
+        ospf_peers = [{
+            "name": peer["name"],
+            "node_id": peer["node_id"],
+            "link_local": f"fe80::{peer['node_id']}",
+        } for peer in peers]
+        ospf_config = render_ospf_neighbors(ospf_peers)
+        ospf_path = Path(self.bird.config_dir) / "ospf_neighbors.conf"
+        ospf_path.write_text(ospf_config)
+        logger.info("Updated OSPFv3 neighbors configuration")
         
         # NOTE: iBGP peers are now managed by SyncDaemon to prevent duplication
         
