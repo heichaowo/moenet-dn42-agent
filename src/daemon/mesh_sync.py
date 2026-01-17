@@ -142,9 +142,15 @@ class MeshSync:
         peers = mesh_config.get("peers", [])
         logger.info(f"Mesh peers: {len(peers)}")
         
+        # Get current mesh interfaces from system
+        current_status = self.wg.get_status()
+        current_names = set(current_status.get("names", []))
+        active_names = set()
+
         # Create/update WG IGP interfaces
         for peer in peers:
-            interface_name = f"wg-igp-{peer['node_id']}"
+            interface_name = f"dn42-wg-igp-{peer['node_id']}"
+            active_names.add(interface_name)
             
             config = render_mesh_interface(
                 interface_name=interface_name,
@@ -163,25 +169,20 @@ class MeshSync:
             self.wg.up(interface_name)
             logger.info(f"Configured mesh interface: {interface_name}")
         
-        # Generate iBGP configs using loopback addresses
-        local_is_rr = mesh_config.get("is_rr", False)
-        
-        for peer in peers:
-            ibgp_config = render_ibgp_peer(
-                peer_name=peer["name"],
-                peer_loopback=peer["loopback"],
-                asn=4242420998,
-                is_rr_client=local_is_rr and not peer.get("is_rr", False),
-            )
-            
-            peer_file = f"ibgp_{peer['name'].replace('.', '_').replace('-', '_')}.conf"
-            self.bird.write_peer(peer_file, ibgp_config)
-        
+        # Remove stale mesh interfaces
+        for stale_name in current_names - active_names:
+            if stale_name.startswith("dn42-wg-igp-") or stale_name.startswith("wg-igp-"):
+                logger.info(f"Removing stale mesh interface: {stale_name}")
+                self.wg.down(stale_name)
+                self.wg.remove_interface(stale_name)
+
         # Write Babel config
         babel_config = render_babel_config()
         babel_path = Path(self.bird.config_dir).parent / "babel.conf"
         babel_path.write_text(babel_config)
         logger.info("Updated Babel configuration")
+        
+        # NOTE: iBGP peers are now managed by SyncDaemon to prevent duplication
         
         # Reload BIRD
         self.bird.reload()

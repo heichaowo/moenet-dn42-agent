@@ -74,20 +74,11 @@ async def main():
         heartbeat_interval=config.heartbeat_interval,
     )
     
-    # Create mesh sync for IGP underlay
-    # Use node_id from config, or fallback to hash-based calculation
-    node_id = config.node_id if config.node_id > 0 else (hash(config.node_name) % 100 + 1)
-    
-    mesh_sync = MeshSync(
-        client=client,
-        wg_executor=wg_executor,
-        bird_executor=bird_executor,
-        node_id=node_id,
-        mesh_port=51821,
-    )
-    
     # Register node with control plane (auto-create if not exists)
+    # This MUST happen before loopback setup to get valid node_id
     logger.info("Registering with control plane...")
+    node_id = config.node_id  # Start with config value
+    
     try:
         is_rr = "rr" in config.node_name.lower()
         registration = await client.register_node(
@@ -108,8 +99,30 @@ async def main():
         )
         if registration:
             logger.info(f"✅ Node registered: {registration.get('status')}")
+            # Use node_id from Control Plane (authoritative source)
+            cp_node_id = registration.get('numeric_node_id')
+            if cp_node_id and 1 <= cp_node_id <= 62:
+                node_id = cp_node_id
+                logger.info(f"Using node_id={node_id} from Control Plane")
     except Exception as e:
         logger.warning(f"Node registration failed (will retry): {e}")
+    
+    # Validate node_id before proceeding
+    if not node_id or node_id < 1 or node_id > 62:
+        logger.error(f"Invalid node_id={node_id}: must be 1-62 for /26 subnet")
+        logger.error("Please check Control Plane database or agent config")
+        # Use a safe fallback for first-time setup (will be corrected on next sync)
+        node_id = 1
+        logger.warning(f"Using fallback node_id={node_id} - this may conflict with other nodes!")
+    
+    # Create mesh sync for IGP underlay
+    mesh_sync = MeshSync(
+        client=client,
+        wg_executor=wg_executor,
+        bird_executor=bird_executor,
+        node_id=node_id,
+        mesh_port=51821,
+    )
     
     # Configure loopback interface with DN42 IPs
     logger.info("Configuring loopback interface...")
