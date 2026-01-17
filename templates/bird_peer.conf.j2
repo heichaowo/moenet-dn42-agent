@@ -3,7 +3,7 @@
 
 protocol bgp dn42_{{ peer.asn }} from dn42_peer {
     neighbor {{ peer.bgp.dn42_ipv6 or peer.bgp.dn42_ipv4 }} as {{ peer.asn }};
-{% if peer.bgp.dn42_ipv6 and peer.bgp.dn42_ipv6.startswith('fe80::') %}
+{% if peer.bgp.dn42_ipv6 and (peer.bgp.dn42_ipv6|lower)[:6] == 'fe80::' %}
     interface "dn42-{{ peer.asn }}";
 {% if peer.bgp.request_lla %}
     source address {{ peer.bgp.request_lla }};

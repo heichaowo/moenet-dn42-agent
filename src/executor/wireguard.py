@@ -8,9 +8,53 @@ logger = logging.getLogger(__name__)
 
 
 class WireGuardExecutor:
-    def __init__(self, config_dir: str = "/etc/wireguard", private_key: str = ""):
+    def __init__(self, config_dir: str = "/etc/wireguard", private_key_path: str = None):
         self.config_dir = Path(config_dir)
-        self.private_key = private_key
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Load or generate private key
+        if private_key_path:
+            self._key_path = Path(private_key_path)
+        else:
+            self._key_path = self.config_dir / "private.key"
+        
+        self.private_key, self.public_key = self._load_or_create_key()
+    
+    def _load_or_create_key(self) -> tuple[str, str]:
+        """Load existing private key or generate a new one.
+        
+        Returns:
+            Tuple of (private_key, public_key)
+        """
+        if self._key_path.exists():
+            private_key = self._key_path.read_text().strip()
+            logger.info(f"Loaded WG private key from {self._key_path}")
+        else:
+            # Generate new key
+            result = subprocess.run(
+                ["wg", "genkey"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            private_key = result.stdout.strip()
+            
+            # Save to file
+            self._key_path.write_text(private_key)
+            os.chmod(self._key_path, 0o600)
+            logger.info(f"Generated new WG private key at {self._key_path}")
+        
+        # Derive public key
+        result = subprocess.run(
+            ["wg", "pubkey"],
+            input=private_key,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        public_key = result.stdout.strip()
+        
+        return private_key, public_key
     
     def _interface_name(self, identifier) -> str:
         """Convert identifier to interface name."""
