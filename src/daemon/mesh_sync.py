@@ -229,6 +229,8 @@ class MeshSync:
             return True
         
         # Build peer list for config
+        # Sort peers to ensure RR nodes come first (they get fe80::/10 and ff00::/8)
+        # This is important because WireGuard AllowedIPs can only route to one peer
         peer_configs = []
         for peer in peers:
             peer_configs.append({
@@ -238,7 +240,12 @@ class MeshSync:
                 "loopback": peer["loopback"],
                 "endpoint": peer.get("endpoint"),
                 "port": peer.get("port", self.mesh_port),
+                "is_rr": "rr" in peer["name"].lower(),  # Detect RR by name
             })
+        
+        # Sort: RR nodes first, then by node_id for consistency
+        # First peer gets fe80::/10 and ff00::/8 (multicast), so RR should be first
+        peer_configs.sort(key=lambda p: (not p["is_rr"], p["node_id"]))
         
         # Render single interface config with all peers
         config = render_mesh_config(

@@ -33,11 +33,15 @@ PublicKey = {{ peer.public_key }}
 {% if peer.endpoint %}
 Endpoint = {{ peer.endpoint }}:{{ peer.port }}
 {% endif %}
-# AllowedIPs breakdown:
-#   - fe80::/10: Link-local addresses for Babel neighbor discovery
-#   - ff00::/8: Multicast for Babel hello/update
-#   - {{ peer.loopback }}/128: Peer's loopback for iBGP reachability
+{% if loop.first %}
+# First peer (usually RR) gets full link-local and multicast ranges
+# All Babel traffic goes through this peer, which then reflects routes
 AllowedIPs = fe80::/10, ff00::/8, {{ peer.loopback }}/128
+{% else %}
+# Other peers only get their specific link-local and loopback
+# Routes are learned via the first peer (RR) through Babel
+AllowedIPs = fe80::{{ peer.node_id }}/128, {{ peer.loopback }}/128
+{% endif %}
 PersistentKeepalive = 25
 
 {% endfor %}
