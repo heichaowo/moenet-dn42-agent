@@ -142,6 +142,36 @@ class MeshSync:
                     self.wg.down(name)
                     self.wg.remove_interface(name)
     
+    def _configure_mesh_link_local(self):
+        """Configure link-local IPv6 address on mesh interface for Babel.
+        
+        Babel requires IPv6 addresses on interfaces to exchange routes.
+        We use fe80::{node_id}/64 as the link-local address.
+        """
+        link_local = f"fe80::{self.node_id}"
+        try:
+            # Check if already configured
+            result = subprocess.run(
+                ["ip", "-6", "addr", "show", "dev", MESH_INTERFACE_NAME],
+                capture_output=True, text=True
+            )
+            if link_local in result.stdout:
+                logger.debug(f"Link-local {link_local} already configured")
+                return
+            
+            # Add link-local address
+            subprocess.run(
+                ["ip", "-6", "addr", "add", f"{link_local}/64", "dev", MESH_INTERFACE_NAME],
+                capture_output=True, check=True
+            )
+            logger.info(f"Configured link-local {link_local}/64 on {MESH_INTERFACE_NAME}")
+        except subprocess.CalledProcessError as e:
+            # May already exist, ignore error
+            if "exists" not in str(e.stderr):
+                logger.warning(f"Failed to add link-local: {e}")
+        except Exception as e:
+            logger.warning(f"Error configuring link-local: {e}")
+    
     async def sync_mesh(self) -> bool:
         """Sync mesh network configuration.
         
@@ -201,6 +231,10 @@ class MeshSync:
         self.wg.write_interface(MESH_INTERFACE_NAME, config)
         self.wg.up(MESH_INTERFACE_NAME)
         logger.info(f"Configured mesh interface: {MESH_INTERFACE_NAME} with {len(peers)} peers")
+        
+        # Add link-local IPv6 address for Babel (fe80::{node_id})
+        # This is required for Babel to work on the mesh interface
+        self._configure_mesh_link_local()
 
         # Write Babel config
         babel_config = render_babel_config()
