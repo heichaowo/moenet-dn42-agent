@@ -1,16 +1,30 @@
-"""MoeNet DN42 Agent - Mesh Network Sync
+"""MoeNet DN42 Agent - Mesh Network Sync (P2P Mode)
 
 Syncs WireGuard IGP mesh tunnels and Babel configuration.
-Uses single WireGuard interface with multiple peers to avoid port conflicts.
+Uses one WireGuard interface per peer (P2P mode) for:
+- Complete AllowedIPs per interface (no conflicts)
+- Per-interface MTU settings
+- Per-interface Babel cost/metric
+
+Port allocation scheme:
+- Each interface listens on: base_port + peer_node_id
+- Connects to peer on: base_port + local_node_id
+- Example: Node 3 connecting to Node 1 -> listen on 51821, connect to 51823
 """
 import asyncio
 import logging
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Set
 
 from client.control_plane import ControlPlaneClient
-from renderer.wg_mesh import get_or_create_mesh_key, render_mesh_config
+from renderer.wg_mesh import (
+    get_or_create_mesh_key, 
+    render_mesh_interface, 
+    get_mesh_interface_name,
+    get_mesh_listen_port,
+    generate_link_local,
+)
 from renderer.babel import render_babel_config, render_ibgp_peer
 from executor.wireguard import WireGuardExecutor
 from executor.bird import BirdExecutor
@@ -18,11 +32,13 @@ from executor.bird import BirdExecutor
 logger = logging.getLogger(__name__)
 
 MESH_KEY_PATH = Path("/var/lib/moenet-agent/mesh_private_key")
-MESH_INTERFACE_NAME = "dn42-wg-igp"  # Single interface for all mesh peers
+MESH_BASE_PORT = 51820  # Base port, actual = base + peer_node_id
+MESH_MTU_DEFAULT = 1400  # Default MTU for public internet
+MESH_MTU_PRIVATE = 1420  # MTU for private/dedicated links
 
 
 class MeshSync:
-    """Handles mesh network synchronization for IGP underlay."""
+    """Handles mesh network synchronization for IGP underlay (P2P Mode)."""
     
     def __init__(
         self,
@@ -30,15 +46,14 @@ class MeshSync:
         wg_executor: WireGuardExecutor,
         bird_executor: BirdExecutor,
         node_id: int,
-        mesh_port: int = 51821,  # Use 51821 to avoid conflict with eBGP WG on 51820
     ):
         self.client = client
         self.wg = wg_executor
         self.bird = bird_executor
         self.node_id = node_id
-        self.mesh_port = mesh_port
         self._private_key: Optional[str] = None
         self._public_key: Optional[str] = None
+        self._active_interfaces: Set[str] = set()
     
     async def init_keys(self) -> tuple[str, str]:
         """Initialize mesh WireGuard keys.
@@ -88,7 +103,6 @@ class MeshSync:
                 # Normalize the input address for comparison
                 addr_only = addr.split("/")[0]
                 if ":" in addr_only:
-                    # IPv6 - normalize to compare properly
                     normalized_input = str(ipaddress.ip_address(addr_only))
                 else:
                     normalized_input = addr_only
@@ -100,7 +114,6 @@ class MeshSync:
                     capture_output=True, text=True
                 )
                 
-                # Check if normalized address is in output
                 if normalized_input in result.stdout:
                     logger.debug(f"Address {addr} already configured on {dev}")
                     return True
@@ -120,87 +133,89 @@ class MeshSync:
                 logger.error(f"Error adding address: {e}")
                 return False
         
-        # Configure all addresses on dummy0
         success = True
         success &= add_addr(loopback_ipv6)
         success &= add_addr(dn42_ipv4)
         success &= add_addr(dn42_ipv6)
         return success
     
-    def _cleanup_old_interfaces(self):
-        """Remove old per-peer mesh interfaces (migration from old design)."""
-        current_status = self.wg.get_status()
-        current_names = set(current_status.get("names", []))
-        
-        for name in current_names:
-            # Old format: dn42-wg-igp-{node_id} or wg-igp-{node_id}
-            if name.startswith("dn42-wg-igp-") or name.startswith("wg-igp-"):
-                # Check if it's the old per-peer format (has node_id suffix)
-                suffix = name.split("-")[-1]
-                if suffix.isdigit():
-                    logger.info(f"Removing old per-peer mesh interface: {name}")
-                    self.wg.down(name)
-                    self.wg.remove_interface(name)
-    
-    def _configure_mesh_link_local(self):
+    def _configure_interface_link_local(self, interface_name: str):
         """Configure link-local IPv6 address on mesh interface for Babel.
         
-        Babel requires IPv6 addresses on interfaces to exchange routes.
-        We use fe80::{node_id}/64 as the link-local address.
+        Args:
+            interface_name: Interface name (e.g., dn42-wg-igp-1)
         """
-        link_local = f"fe80::{self.node_id}"
+        link_local = generate_link_local(self.node_id)
         try:
             # Check if already configured
             result = subprocess.run(
-                ["ip", "-6", "addr", "show", "dev", MESH_INTERFACE_NAME],
+                ["ip", "-6", "addr", "show", "dev", interface_name],
                 capture_output=True, text=True
             )
             if link_local in result.stdout:
-                logger.debug(f"Link-local {link_local} already configured")
+                logger.debug(f"Link-local {link_local} already configured on {interface_name}")
                 return
             
             # Add link-local address
             subprocess.run(
-                ["ip", "-6", "addr", "add", f"{link_local}/64", "dev", MESH_INTERFACE_NAME],
+                ["ip", "-6", "addr", "add", f"{link_local}/64", "dev", interface_name],
                 capture_output=True, check=True
             )
-            logger.info(f"Configured link-local {link_local}/64 on {MESH_INTERFACE_NAME}")
+            logger.info(f"Configured link-local {link_local}/64 on {interface_name}")
         except subprocess.CalledProcessError as e:
-            # May already exist, ignore error
             if "exists" not in str(e.stderr):
-                logger.warning(f"Failed to add link-local: {e}")
+                logger.warning(f"Failed to add link-local on {interface_name}: {e}")
         except Exception as e:
-            logger.warning(f"Error configuring link-local: {e}")
+            logger.warning(f"Error configuring link-local on {interface_name}: {e}")
     
-    def _set_mesh_mtu(self, mtu: int = 1400):
+    def _set_interface_mtu(self, interface_name: str, mtu: int = MESH_MTU_DEFAULT):
         """Set MTU on mesh interface.
         
-        MTU should be reduced for WireGuard overhead:
-        - Ethernet MTU: 1500
-        - WireGuard overhead: ~60 bytes (IPv6) or ~80 bytes (IPv4+IPv6)
-        - Safe value: 1400
-        
         Args:
-            mtu: MTU value (default 1400)
+            interface_name: Interface name
+            mtu: MTU value (1400 for public, 1420 for private)
         """
         try:
             subprocess.run(
-                ["ip", "link", "set", "dev", MESH_INTERFACE_NAME, "mtu", str(mtu)],
+                ["ip", "link", "set", "dev", interface_name, "mtu", str(mtu)],
                 capture_output=True, check=True
             )
-            logger.debug(f"Set MTU {mtu} on {MESH_INTERFACE_NAME}")
+            logger.debug(f"Set MTU {mtu} on {interface_name}")
         except subprocess.CalledProcessError as e:
-            logger.warning(f"Failed to set MTU: {e}")
+            logger.warning(f"Failed to set MTU on {interface_name}: {e}")
+    
+    def _cleanup_stale_interfaces(self, active_peer_ids: Set[int]):
+        """Remove interfaces for peers that are no longer in the mesh.
+        
+        Args:
+            active_peer_ids: Set of currently active peer node IDs
+        """
+        # Get current mesh interfaces
+        current_status = self.wg.get_status()
+        current_names = set(current_status.get("names", []))
+        
+        for name in current_names:
+            if name.startswith("dn42-wg-igp-"):
+                try:
+                    suffix = name.split("-")[-1]
+                    peer_id = int(suffix)
+                    if peer_id not in active_peer_ids:
+                        logger.info(f"Removing stale mesh interface: {name}")
+                        self.wg.down(name)
+                        self.wg.remove_interface(name)
+                except (ValueError, IndexError):
+                    pass
     
     async def sync_mesh(self) -> bool:
-        """Sync mesh network configuration.
+        """Sync mesh network configuration (P2P Mode).
         
         1. Get mesh config from control plane
         2. Configure local loopback address
-        3. Create/update single WG IGP interface with all peers
-        4. Generate iBGP peer configs using loopback addresses
+        3. Create/update WG IGP interface for each peer
+        4. Configure link-local and MTU per interface
+        5. Update Babel config
         """
-        logger.info("Syncing mesh network...")
+        logger.info("Syncing mesh network (P2P mode)...")
         
         # Ensure keys are initialized
         private_key, public_key = await self.init_keys()
@@ -211,7 +226,7 @@ class MeshSync:
             logger.warning("No mesh config available")
             return False
         
-        # Configure loopback addresses on dummy0 (created by Ansible)
+        # Configure loopback addresses on dummy0
         local_loopback = mesh_config.get("loopback")
         dn42_ipv4 = mesh_config.get("dn42_ipv4")
         dn42_ipv6 = mesh_config.get("dn42_ipv6")
@@ -221,51 +236,51 @@ class MeshSync:
         peers = mesh_config.get("peers", [])
         logger.info(f"Mesh peers: {len(peers)}")
         
-        # Clean up old per-peer interfaces (migration)
-        self._cleanup_old_interfaces()
-        
         if not peers:
             logger.info("No mesh peers configured")
             return True
         
-        # Build peer list for config
-        # Sort peers to ensure RR nodes come first (they get fe80::/10 and ff00::/8)
-        # This is important because WireGuard AllowedIPs can only route to one peer
-        peer_configs = []
+        # Track active peer IDs for cleanup
+        active_peer_ids: Set[int] = set()
+        
+        # Configure each peer in P2P mode
         for peer in peers:
-            peer_configs.append({
-                "name": peer["name"],
-                "node_id": peer["node_id"],
-                "public_key": peer["public_key"],
-                "loopback": peer["loopback"],
-                "endpoint": peer.get("endpoint"),
-                "port": peer.get("port", self.mesh_port),
-                "is_rr": "rr" in peer["name"].lower(),  # Detect RR by name
-            })
+            peer_node_id = peer["node_id"]
+            peer_name = peer["name"]
+            active_peer_ids.add(peer_node_id)
+            
+            # Calculate ports:
+            # We listen on: base_port + peer_node_id (unique per peer)
+            # Peer listens on: base_port + our_node_id
+            listen_port = get_mesh_listen_port(peer_node_id, MESH_BASE_PORT)
+            peer_port = get_mesh_listen_port(self.node_id, MESH_BASE_PORT)
+            
+            # Render interface config
+            config, interface_name, _ = render_mesh_interface(
+                private_key=private_key,
+                peer_node_id=peer_node_id,
+                peer_name=peer_name,
+                peer_public_key=peer["public_key"],
+                peer_loopback=peer["loopback"],
+                peer_endpoint=peer.get("endpoint"),
+                peer_port=peer_port,
+                base_port=MESH_BASE_PORT,
+            )
+            
+            # Write and bring up interface
+            self.wg.write_interface(interface_name, config)
+            self.wg.up(interface_name)
+            
+            # Configure MTU (can be customized per peer in future)
+            self._set_interface_mtu(interface_name, MESH_MTU_DEFAULT)
+            
+            # Configure link-local address
+            self._configure_interface_link_local(interface_name)
+            
+            logger.info(f"Configured mesh interface: {interface_name} -> {peer_name} (port {listen_port})")
         
-        # Sort: RR nodes first, then by node_id for consistency
-        # First peer gets fe80::/10 and ff00::/8 (multicast), so RR should be first
-        peer_configs.sort(key=lambda p: (not p["is_rr"], p["node_id"]))
-        
-        # Render single interface config with all peers
-        config = render_mesh_config(
-            private_key=private_key,
-            listen_port=self.mesh_port,
-            peers=peer_configs,
-        )
-        
-        # Write and bring up the single mesh interface
-        self.wg.write_interface(MESH_INTERFACE_NAME, config)
-        self.wg.up(MESH_INTERFACE_NAME)
-        
-        # Set MTU to 1400 for WireGuard overhead safety
-        self._set_mesh_mtu(1400)
-        
-        logger.info(f"Configured mesh interface: {MESH_INTERFACE_NAME} with {len(peers)} peers")
-        
-        # Add link-local IPv6 address for Babel (fe80::{node_id})
-        # This is required for Babel neighbor discovery and route exchange
-        self._configure_mesh_link_local()
+        # Cleanup stale interfaces
+        self._cleanup_stale_interfaces(active_peer_ids)
 
         # Write Babel config
         babel_config = render_babel_config()
@@ -273,11 +288,8 @@ class MeshSync:
         babel_path.write_text(babel_config)
         logger.info("Updated Babel configuration")
         
-        # NOTE: iBGP peers are now managed by SyncDaemon to prevent duplication
-        
         # Reload BIRD
         self.bird.reload()
-        logger.info("Mesh sync complete")
+        logger.info("Mesh sync complete (P2P mode)")
         
         return True
-
