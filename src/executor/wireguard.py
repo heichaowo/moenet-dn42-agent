@@ -88,19 +88,8 @@ class WireGuardExecutor:
                 # Create new interface
                 subprocess.run(["ip", "link", "add", iface, "type", "wireguard"], check=True)
             
-            # Set private key via temp file (wg set reads from file)
-            if private_key:
-                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.key') as f:
-                    f.write(private_key)
-                    key_file = f.name
-                try:
-                    subprocess.run(["wg", "set", iface, "private-key", key_file], check=True)
-                finally:
-                    import os
-                    os.unlink(key_file)
-            
             # Set peer config via temp file (peers-only config for setconf)
-            # NOTE: setconf MUST come before listen-port, as setconf resets interface settings
+            # NOTE: setconf MUST come FIRST, as it resets all interface settings!
             if peer_config:
                 with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.conf') as f:
                     f.write(peer_config)
@@ -110,6 +99,17 @@ class WireGuardExecutor:
                 finally:
                     import os
                     os.unlink(peer_conf_file)
+            
+            # Set private key AFTER setconf (setconf resets it!)
+            if private_key:
+                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.key') as f:
+                    f.write(private_key)
+                    key_file = f.name
+                try:
+                    subprocess.run(["wg", "set", iface, "private-key", key_file], check=True)
+                finally:
+                    import os
+                    os.unlink(key_file)
             
             # Set listen port AFTER setconf (setconf resets it!)
             if listen_port:
