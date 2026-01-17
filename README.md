@@ -4,8 +4,9 @@
 
 - 🔄 从 control-plane 拉取配置并自动应用
 - 🔐 动态管理 WireGuard 隧道和防火墙规则
-- 🔄 自动注册节点（首次运行时自动创建）
-- 🕸️ 管理 Mesh 网络 (IGP underlay)
+- 🔄 自动注册节点，获取唯一 `node_id` 并持久化
+- 🕸️ 管理 Mesh 网络 (IGP underlay)，支持定期重试
+- 🌐 配置 Loopback 接口 (dummy0) 及 DN42 地址
 - 💾 保存 last_state.json 用于灾难恢复
 - ❤️ 上报健康状态
 
@@ -137,13 +138,29 @@ Agent 在本地提供 HTTP API (默认端口 54321)：
 
 **安全**: Agent API 端口通过防火墙限制，仅允许 Control Plane IP 访问。
 
-## 自动注册
+## 自动注册与 Node ID
 
 Agent 首次启动时会自动向 Control Plane 注册：
 
 1. 检测节点类型 (RR/Edge) 根据 hostname
 2. 上报 IP 地址、agent 版本
-3. Control Plane 自动创建节点记录
+3. Control Plane 自动分配唯一 `node_id` (1-62)
+4. Agent 将 `node_id` 持久化到 `config.json`，避免重启后依赖 CP
+
+### Node ID 与 IP 分配
+
+| 字段 | 计算方式 | 示例 (node_id=2) |
+| ---- | -------- | ---------------- |
+| `dn42_ipv4` | `172.22.188.{node_id}` | `172.22.188.2` |
+| `loopback_ipv6` | `fd00:4242:7777::{node_id}` | `fd00:4242:7777::2` |
+
+### Loopback 配置
+
+Agent 自动配置 `dummy0` 接口：
+
+- 添加 `/32` IPv4 和 `/128` IPv6 地址（基于 node_id）
+- **不会添加** 整个 `/26` 或 `/48` 前缀（这会导致路由问题）
+- 清理旧的/过时的地址
 
 无需手动在 Control Plane 添加节点！
 
