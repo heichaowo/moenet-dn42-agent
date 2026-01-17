@@ -44,15 +44,59 @@ class WireGuardExecutor:
         return True
     
     def up(self, identifier) -> bool:
+        """Bring up WireGuard interface using direct wg commands.
+        
+        Uses wg command directly instead of wg-quick to avoid route conflicts
+        (wg-quick adds routes for AllowedIPs which can conflict with dummy0 loopback).
+        """
         iface = self._interface_name(identifier)
-        result = subprocess.run(["wg-quick", "up", iface], capture_output=True)
-        if result.returncode != 0:
-            logger.error(f"Failed to bring up {iface}: {result.stderr.decode()}")
-        return result.returncode == 0
+        config_path = self.config_dir / f"{iface}.conf"
+        
+        if not config_path.exists():
+            logger.error(f"Config file not found: {config_path}")
+            return False
+        
+        try:
+            # Check if interface already exists
+            check = subprocess.run(["ip", "link", "show", iface], capture_output=True)
+            if check.returncode == 0:
+                # Interface exists, just update config
+                result = subprocess.run(
+                    ["wg", "setconf", iface, str(config_path)],
+                    capture_output=True, text=True
+                )
+                if result.returncode != 0:
+                    logger.error(f"Failed to setconf {iface}: {result.stderr}")
+                    return False
+                logger.debug(f"Updated existing interface {iface}")
+                return True
+            
+            # Create new interface
+            subprocess.run(["ip", "link", "add", iface, "type", "wireguard"], check=True)
+            subprocess.run(["wg", "setconf", iface, str(config_path)], check=True)
+            subprocess.run(["ip", "link", "set", "mtu", "1420", "up", "dev", iface], check=True)
+            
+            logger.info(f"Brought up {iface}")
+            return True
+            
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to bring up {iface}: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Error bringing up {iface}: {e}")
+            return False
     
     def down(self, identifier) -> bool:
+        """Bring down WireGuard interface using direct commands."""
         iface = self._interface_name(identifier)
-        subprocess.run(["wg-quick", "down", iface], capture_output=True)
+        try:
+            # Check if interface exists
+            check = subprocess.run(["ip", "link", "show", iface], capture_output=True)
+            if check.returncode == 0:
+                subprocess.run(["ip", "link", "del", iface], capture_output=True)
+                logger.info(f"Removed interface {iface}")
+        except Exception as e:
+            logger.debug(f"Interface {iface} may not exist: {e}")
         return True
     
     def get_status(self) -> dict:
