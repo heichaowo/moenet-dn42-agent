@@ -135,13 +135,12 @@ async def main():
         logger.error("Or manually set 'node_id' in config.json to a unique value (1-62).")
         sys.exit(1)  # Fail early instead of causing duplicate IP conflicts
     
-    # Create mesh sync for IGP underlay
+    # Create mesh sync for IGP underlay (P2P mode)
     mesh_sync = MeshSync(
         client=client,
         wg_executor=wg_executor,
         bird_executor=bird_executor,
         node_id=node_id,
-        mesh_port=51821,
     )
     
     # Configure loopback interface with DN42 IPs
