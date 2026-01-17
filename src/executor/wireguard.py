@@ -48,7 +48,15 @@ class WireGuardExecutor:
         
         Uses wg command directly instead of wg-quick to avoid route conflicts
         (wg-quick adds routes for AllowedIPs which can conflict with dummy0 loopback).
+        
+        Note: wg setconf doesn't accept PrivateKey, so we need to:
+        1. Extract PrivateKey and ListenPort from config
+        2. Use wg set to configure interface settings
+        3. Use wg setconf with peer-only config (or wg set peer)
         """
+        import tempfile
+        import re
+        
         iface = self._interface_name(identifier)
         config_path = self.config_dir / f"{iface}.conf"
         
@@ -57,26 +65,60 @@ class WireGuardExecutor:
             return False
         
         try:
+            # Parse config file
+            config_content = config_path.read_text()
+            
+            # Extract PrivateKey
+            private_key_match = re.search(r'PrivateKey\s*=\s*(\S+)', config_content)
+            private_key = private_key_match.group(1) if private_key_match else None
+            
+            # Extract ListenPort
+            listen_port_match = re.search(r'ListenPort\s*=\s*(\d+)', config_content)
+            listen_port = listen_port_match.group(1) if listen_port_match else None
+            
+            # Extract peer section (everything from [Peer] onwards)
+            peer_match = re.search(r'(\[Peer\].*)', config_content, re.DOTALL)
+            peer_config = peer_match.group(1) if peer_match else None
+            
             # Check if interface already exists
             check = subprocess.run(["ip", "link", "show", iface], capture_output=True)
-            if check.returncode == 0:
-                # Interface exists, just update config
-                result = subprocess.run(
-                    ["wg", "setconf", iface, str(config_path)],
-                    capture_output=True, text=True
-                )
-                if result.returncode != 0:
-                    logger.error(f"Failed to setconf {iface}: {result.stderr}")
-                    return False
-                logger.debug(f"Updated existing interface {iface}")
-                return True
+            interface_exists = (check.returncode == 0)
             
-            # Create new interface
-            subprocess.run(["ip", "link", "add", iface, "type", "wireguard"], check=True)
-            subprocess.run(["wg", "setconf", iface, str(config_path)], check=True)
-            subprocess.run(["ip", "link", "set", "mtu", "1420", "up", "dev", iface], check=True)
+            if not interface_exists:
+                # Create new interface
+                subprocess.run(["ip", "link", "add", iface, "type", "wireguard"], check=True)
             
-            logger.info(f"Brought up {iface}")
+            # Set private key via temp file (wg set reads from file)
+            if private_key:
+                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.key') as f:
+                    f.write(private_key)
+                    key_file = f.name
+                try:
+                    subprocess.run(["wg", "set", iface, "private-key", key_file], check=True)
+                finally:
+                    import os
+                    os.unlink(key_file)
+            
+            # Set listen port
+            if listen_port:
+                subprocess.run(["wg", "set", iface, "listen-port", listen_port], check=True)
+            
+            # Set peer config via temp file (peers-only config for setconf)
+            if peer_config:
+                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.conf') as f:
+                    f.write(peer_config)
+                    peer_conf_file = f.name
+                try:
+                    subprocess.run(["wg", "setconf", iface, peer_conf_file], check=True)
+                finally:
+                    import os
+                    os.unlink(peer_conf_file)
+            
+            # Bring interface up if not already
+            if not interface_exists:
+                subprocess.run(["ip", "link", "set", "mtu", "1420", "up", "dev", iface], check=True)
+            
+            logger.info(f"Configured {iface}")
             return True
             
         except subprocess.CalledProcessError as e:
