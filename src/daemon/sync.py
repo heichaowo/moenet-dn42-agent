@@ -56,7 +56,7 @@ class SyncDaemon:
         needs_regeneration = False
         for peer in config.get("peers", []):
             asn = peer["asn"]
-            bird_path = self.bird.peers_dir / f"dn42_{asn}.conf"
+            bird_path = self.bird.config_dir / f"dn42_{asn}.conf"
             wg_path = self.wg.config_dir / f"dn42-{asn}.conf"
             if not bird_path.exists() or not wg_path.exists():
                 logger.info(f"Missing config for AS{asn}, forcing regeneration")
