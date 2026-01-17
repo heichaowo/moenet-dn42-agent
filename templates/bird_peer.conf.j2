@@ -2,6 +2,9 @@
 # Peer: AS{{ peer.asn }} ({{ peer.name }})
 
 protocol bgp dn42_{{ peer.asn }} from dn42_peer {
+{% if peer.contact %}
+    description "{{ peer.contact }}";
+{% endif %}
     neighbor {{ peer.bgp.dn42_ipv6 or peer.bgp.dn42_ipv4 }} as {{ peer.asn }};
 {% if peer.bgp.dn42_ipv6 and (peer.bgp.dn42_ipv6|lower)[:6] == 'fe80::' %}
     interface "dn42-{{ peer.asn }}";
