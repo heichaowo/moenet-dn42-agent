@@ -143,7 +143,11 @@ class SyncDaemon:
         self.bird.remove_peer(asn)
     
     async def send_heartbeat(self) -> bool:
-        status = {**self.bird.get_status(), **self.wg.get_status()}
+        status = {
+            **self.bird.get_status(),
+            **self.wg.get_status(),
+            "ebgp_public_key": self.wg.public_key,  # Include eBGP key in every heartbeat
+        }
         self.state.update_health(status)
         return await self.client.send_heartbeat("2.1.0", self.state.get_config_hash(), status)
     
