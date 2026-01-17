@@ -1,6 +1,7 @@
 """MoeNet DN42 Agent - Mesh Network Sync
 
 Syncs WireGuard IGP mesh tunnels and Babel configuration.
+Uses single WireGuard interface with multiple peers to avoid port conflicts.
 """
 import asyncio
 import logging
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from client.control_plane import ControlPlaneClient
-from renderer.wg_mesh import get_or_create_mesh_key, render_mesh_interface
+from renderer.wg_mesh import get_or_create_mesh_key, render_mesh_config
 from renderer.babel import render_babel_config, render_ibgp_peer
 from executor.wireguard import WireGuardExecutor
 from executor.bird import BirdExecutor
@@ -17,6 +18,7 @@ from executor.bird import BirdExecutor
 logger = logging.getLogger(__name__)
 
 MESH_KEY_PATH = Path("/var/lib/moenet-agent/mesh_private_key")
+MESH_INTERFACE_NAME = "dn42-wg-igp"  # Single interface for all mesh peers
 
 
 class MeshSync:
@@ -125,12 +127,27 @@ class MeshSync:
         success &= add_addr(dn42_ipv6)
         return success
     
+    def _cleanup_old_interfaces(self):
+        """Remove old per-peer mesh interfaces (migration from old design)."""
+        current_status = self.wg.get_status()
+        current_names = set(current_status.get("names", []))
+        
+        for name in current_names:
+            # Old format: dn42-wg-igp-{node_id} or wg-igp-{node_id}
+            if name.startswith("dn42-wg-igp-") or name.startswith("wg-igp-"):
+                # Check if it's the old per-peer format (has node_id suffix)
+                suffix = name.split("-")[-1]
+                if suffix.isdigit():
+                    logger.info(f"Removing old per-peer mesh interface: {name}")
+                    self.wg.down(name)
+                    self.wg.remove_interface(name)
+    
     async def sync_mesh(self) -> bool:
         """Sync mesh network configuration.
         
         1. Get mesh config from control plane
         2. Configure local loopback address
-        3. Create/update WG IGP interfaces
+        3. Create/update single WG IGP interface with all peers
         4. Generate iBGP peer configs using loopback addresses
         """
         logger.info("Syncing mesh network...")
@@ -154,39 +171,36 @@ class MeshSync:
         peers = mesh_config.get("peers", [])
         logger.info(f"Mesh peers: {len(peers)}")
         
-        # Get current mesh interfaces from system
-        current_status = self.wg.get_status()
-        current_names = set(current_status.get("names", []))
-        active_names = set()
-
-        # Create/update WG IGP interfaces
-        for peer in peers:
-            interface_name = f"dn42-wg-igp-{peer['node_id']}"
-            active_names.add(interface_name)
-            
-            config = render_mesh_interface(
-                interface_name=interface_name,
-                private_key=private_key,
-                listen_port=self.mesh_port,
-                node_id=self.node_id,
-                peer_name=peer["name"],
-                peer_public_key=peer["public_key"],
-                peer_node_id=peer["node_id"],
-                peer_loopback=peer["loopback"],
-                peer_endpoint=peer.get("endpoint"),
-                peer_port=peer.get("port", self.mesh_port),  # Use same port as local mesh_port
-            )
-            
-            self.wg.write_interface(interface_name, config)
-            self.wg.up(interface_name)
-            logger.info(f"Configured mesh interface: {interface_name}")
+        # Clean up old per-peer interfaces (migration)
+        self._cleanup_old_interfaces()
         
-        # Remove stale mesh interfaces
-        for stale_name in current_names - active_names:
-            if stale_name.startswith("dn42-wg-igp-") or stale_name.startswith("wg-igp-"):
-                logger.info(f"Removing stale mesh interface: {stale_name}")
-                self.wg.down(stale_name)
-                self.wg.remove_interface(stale_name)
+        if not peers:
+            logger.info("No mesh peers configured")
+            return True
+        
+        # Build peer list for config
+        peer_configs = []
+        for peer in peers:
+            peer_configs.append({
+                "name": peer["name"],
+                "node_id": peer["node_id"],
+                "public_key": peer["public_key"],
+                "loopback": peer["loopback"],
+                "endpoint": peer.get("endpoint"),
+                "port": peer.get("port", self.mesh_port),
+            })
+        
+        # Render single interface config with all peers
+        config = render_mesh_config(
+            private_key=private_key,
+            listen_port=self.mesh_port,
+            peers=peer_configs,
+        )
+        
+        # Write and bring up the single mesh interface
+        self.wg.write_interface(MESH_INTERFACE_NAME, config)
+        self.wg.up(MESH_INTERFACE_NAME)
+        logger.info(f"Configured mesh interface: {MESH_INTERFACE_NAME} with {len(peers)} peers")
 
         # Write Babel config
         babel_config = render_babel_config()
