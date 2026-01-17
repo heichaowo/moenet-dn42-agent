@@ -80,6 +80,10 @@ class WireGuardExecutor:
             peer_match = re.search(r'(\[Peer\].*)', config_content, re.DOTALL)
             peer_config = peer_match.group(1) if peer_match else None
             
+            # Extract Address (for link-local fe80:: addresses)
+            address_match = re.search(r'Address\s*=\s*(\S+)', config_content)
+            address = address_match.group(1) if address_match else None
+            
             # Check if interface already exists
             check = subprocess.run(["ip", "link", "show", iface], capture_output=True)
             interface_exists = (check.returncode == 0)
@@ -118,6 +122,25 @@ class WireGuardExecutor:
             # Bring interface up if not already
             if not interface_exists:
                 subprocess.run(["ip", "link", "set", "mtu", "1420", "up", "dev", iface], check=True)
+            
+            # Configure Address on interface (important for link-local BGP!)
+            if address:
+                # Check if address already configured
+                family = "-6" if ":" in address else "-4"
+                addr_check = subprocess.run(
+                    ["ip", family, "addr", "show", "dev", iface],
+                    capture_output=True, text=True
+                )
+                addr_only = address.split("/")[0]
+                if addr_only not in addr_check.stdout:
+                    # Ensure proper prefix length
+                    if "/" not in address:
+                        address = f"{address}/64" if ":" in address else f"{address}/32"
+                    subprocess.run(
+                        ["ip", family, "addr", "add", address, "dev", iface],
+                        capture_output=True  # Ignore errors if already exists
+                    )
+                    logger.info(f"Configured address {address} on {iface}")
             
             logger.info(f"Configured {iface}")
             return True

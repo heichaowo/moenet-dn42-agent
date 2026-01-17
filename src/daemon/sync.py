@@ -105,7 +105,9 @@ class SyncDaemon:
         # Open firewall port for WireGuard
         if peer.get("tunnel", {}).get("type") == "wireguard":
             self.firewall.allow_port(listen_port)
-            config = self.wg_renderer.render_interface(peer, self.wg.private_key, "")
+            # Get local link-local address from bgp config (for fe80:: peers)
+            local_addr = peer.get("bgp", {}).get("request_lla", "")
+            config = self.wg_renderer.render_interface(peer, self.wg.private_key, local_addr)
             self.wg.write_interface(asn, config)
             self.wg.up(asn)
         
