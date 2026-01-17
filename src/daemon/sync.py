@@ -52,37 +52,28 @@ class SyncDaemon:
             local_ipv6 = config.get("local_ipv6") or config.get("node_info", {}).get("dn42_ipv6")
             self._sync_ibgp(ibgp_peers, local_ipv6=local_ipv6)
         
-        # Check if any expected peer config files are missing (force regeneration)
-        needs_regeneration = False
-        for peer in config.get("peers", []):
-            asn = peer["asn"]
-            bird_path = self.bird.config_dir / f"dn42_{asn}.conf"
-            wg_path = self.wg.config_dir / f"dn42-{asn}.conf"
-            if not bird_path.exists() or not wg_path.exists():
-                logger.info(f"Missing config for AS{asn}, forcing regeneration")
-                needs_regeneration = True
-                break
-        
-        if remote_hash == self.state.get_config_hash() and not needs_regeneration:
-            logger.info("Config up to date")
-            return True
-        
-        logger.info(f"Config changed, applying...")
+        # Always check all peers - _add_peer uses hash comparison for efficiency
         current = {p["asn"] for p in self.state.get_applied_peers()}
         new_peers = {p["asn"] for p in config.get("peers", [])}
         
+        # Track if any changes were made
+        peers_updated = False
+        
         for peer in config.get("peers", []):
-            if peer["asn"] not in current:
-                self._add_peer(peer)
-            else:
-                self._update_peer(peer)
+            self._add_peer(peer)
         
         for asn in current - new_peers:
             self._remove_peer(asn)
+            peers_updated = True
         
-        self.bird.reload()
-        self.state.update_applied_config(config.get("peers", []), remote_hash)
-        logger.info("Config sync complete")
+        # Only reload BIRD if hash changed (implies config changes)
+        if remote_hash != self.state.get_config_hash():
+            self.bird.reload()
+            self.state.update_applied_config(config.get("peers", []), remote_hash)
+            logger.info("Config sync complete")
+        else:
+            logger.debug("Config up to date")
+        
         return True
     
     def _sync_ibgp(self, ibgp_peers: list, local_ipv6: str = None):
@@ -99,19 +90,39 @@ class SyncDaemon:
         self.bird.write_ibgp(ibgp_config)
     
     def _add_peer(self, peer: dict):
+        import hashlib
+        
         asn = peer["asn"]
         listen_port = peer.get("listen_port") or self._calculate_listen_port(asn)
         
-        # Open firewall port for WireGuard
-        if peer.get("tunnel", {}).get("type") == "wireguard":
-            self.firewall.allow_port(listen_port)
-            # Get local link-local address from bgp config (for fe80:: peers)
-            local_addr = peer.get("bgp", {}).get("request_lla", "")
-            config = self.wg_renderer.render_interface(peer, self.wg.private_key, local_addr)
-            self.wg.write_interface(asn, config)
-            self.wg.up(asn)
+        # Generate expected configs
+        local_addr = peer.get("bgp", {}).get("request_lla", "")
+        expected_wg = self.wg_renderer.render_interface(peer, self.wg.private_key, local_addr)
+        expected_bird = self.bird_renderer.render_peer(peer)
         
-        self.bird.write_peer(asn, self.bird_renderer.render_peer(peer))
+        wg_path = self.wg.config_dir / f"dn42-{asn}.conf"
+        bird_path = self.bird.config_dir / f"dn42_{asn}.conf"
+        
+        # Compare with existing files using hash
+        def file_hash(path) -> str:
+            if path.exists():
+                return hashlib.md5(path.read_text().encode()).hexdigest()
+            return ""
+        
+        wg_needs_update = file_hash(wg_path) != hashlib.md5(expected_wg.encode()).hexdigest()
+        bird_needs_update = file_hash(bird_path) != hashlib.md5(expected_bird.encode()).hexdigest()
+        
+        # Update WireGuard if needed
+        if peer.get("tunnel", {}).get("type") == "wireguard" and wg_needs_update:
+            self.firewall.allow_port(listen_port)
+            self.wg.write_interface(asn, expected_wg)
+            self.wg.up(asn)
+            logger.info(f"Updated WG config for AS{asn}")
+        
+        # Update BIRD if needed
+        if bird_needs_update:
+            self.bird.write_peer(asn, expected_bird)
+            logger.info(f"Updated BIRD config for AS{asn}")
     
     def _calculate_listen_port(self, remote_as: int) -> int:
         """Calculate WireGuard listen port based on remote ASN."""
@@ -121,9 +132,6 @@ class SyncDaemon:
             return 40000 + (remote_as % 10000)
         else:
             return 50000 + (remote_as % 10000)
-    
-    def _update_peer(self, peer: dict):
-        self._add_peer(peer)
     
     def _remove_peer(self, asn: int):
         # Close firewall port
