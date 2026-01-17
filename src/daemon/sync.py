@@ -22,6 +22,7 @@ class SyncDaemon:
         bird_executor: BirdExecutor,
         wg_executor: WireGuardExecutor,
         firewall_executor: FirewallExecutor = None,
+        mesh_sync = None,  # Optional MeshSync instance for periodic mesh sync
         sync_interval: int = 60,
         heartbeat_interval: int = 30,
     ):
@@ -32,6 +33,7 @@ class SyncDaemon:
         self.firewall = firewall_executor or FirewallExecutor()
         self.bird_renderer = BirdRenderer()
         self.wg_renderer = WireGuardRenderer()
+        self.mesh_sync = mesh_sync
         self.sync_interval = sync_interval
         self.heartbeat_interval = heartbeat_interval
         self._running = False
@@ -134,6 +136,12 @@ class SyncDaemon:
             await self.send_heartbeat()
             if counter >= self.sync_interval:
                 await self.sync_config()
+                # Also sync mesh network periodically (retry failed tunnels)
+                if self.mesh_sync:
+                    try:
+                        await self.mesh_sync.sync_mesh()
+                    except Exception as e:
+                        logger.warning(f"Mesh sync failed: {e}")
                 counter = 0
     
     async def stop(self):

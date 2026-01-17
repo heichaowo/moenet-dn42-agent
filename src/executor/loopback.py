@@ -57,10 +57,13 @@ class LoopbackExecutor:
             ipv6_base = self.dn42_ipv6_prefix.split('/')[0].rstrip(':')
             ipv6_node = f"{ipv6_base}::{node_id}"
             
+            # Note: Only add specific /32 and /128 addresses to the interface
+            # The prefixes are announced via BGP from the direct protocol
+            # Do NOT add /48 here - it makes the kernel treat all addresses as local!
             addresses = [
                 (self.dn42_ipv4_prefix, "IPv4 prefix"),
                 (f"{ipv4_node}/32", "IPv4 node"),
-                (self.dn42_ipv6_prefix, "IPv6 prefix"),
+                # Only the /128 loopback, NOT the /48 prefix
                 (f"{ipv6_node}/128", "IPv6 node"),
             ]
             

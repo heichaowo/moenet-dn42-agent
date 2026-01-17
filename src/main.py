@@ -11,6 +11,7 @@ This is a pure agent that:
 import asyncio
 import json
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -38,13 +39,29 @@ logging.basicConfig(
 logger = logging.getLogger("moenet-agent")
 
 
+def _persist_node_id(config_path: str, node_id: int) -> None:
+    """Persist node_id to config file to survive restarts without CP access."""
+    try:
+        config_file = Path(config_path)
+        if config_file.exists():
+            with open(config_file) as f:
+                data = json.load(f)
+            data['node_id'] = node_id
+            with open(config_file, 'w') as f:
+                json.dump(data, f, indent=2)
+            logger.info(f"Persisted node_id={node_id} to {config_path}")
+    except Exception as e:
+        logger.warning(f"Failed to persist node_id: {e}")
+
+
 async def main():
     """Main entry point."""
     from aiohttp import web
     from api.server import create_app
     
-    # Load configuration
-    config = load_config()
+    # Load configuration (track path for persistence)
+    config_path = os.environ.get("AGENT_CONFIG", "/opt/moenet-agent/config.json")
+    config = load_config(config_path)
     
     logger.info(f"MoeNet DN42 Agent starting...")
     logger.info(f"Node: {config.node_name}")
@@ -61,7 +78,7 @@ async def main():
     state_manager = StateManager(config.state_path)
     state_manager.set_node_id(config.node_name)
     
-    # Create sync daemon
+    # Create sync daemon (mesh_sync will be set after it's created)
     bird_executor = BirdExecutor(config.bird_config_dir, config.bird_ctl)
     wg_executor = WireGuardExecutor(config.wg_config_dir)
     
@@ -70,6 +87,7 @@ async def main():
         state_manager=state_manager,
         bird_executor=bird_executor,
         wg_executor=wg_executor,
+        mesh_sync=None,  # Set later after mesh_sync is created
         sync_interval=config.sync_interval,
         heartbeat_interval=config.heartbeat_interval,
     )
@@ -104,16 +122,18 @@ async def main():
             if cp_node_id and 1 <= cp_node_id <= 62:
                 node_id = cp_node_id
                 logger.info(f"Using node_id={node_id} from Control Plane")
+                # Persist to config file to avoid needing CP on next restart
+                _persist_node_id(config_path, node_id)
     except Exception as e:
         logger.warning(f"Node registration failed (will retry): {e}")
     
-    # Validate node_id before proceeding
+    # Validate node_id before proceeding - FAIL EARLY, no dangerous fallback!
     if not node_id or node_id < 1 or node_id > 62:
         logger.error(f"Invalid node_id={node_id}: must be 1-62 for /26 subnet")
-        logger.error("Please check Control Plane database or agent config")
-        # Use a safe fallback for first-time setup (will be corrected on next sync)
-        node_id = 1
-        logger.warning(f"Using fallback node_id={node_id} - this may conflict with other nodes!")
+        logger.error("Cannot proceed without valid node_id - this would cause IP conflicts!")
+        logger.error("Please ensure Control Plane is reachable and node is registered.")
+        logger.error("Or manually set 'node_id' in config.json to a unique value (1-62).")
+        sys.exit(1)  # Fail early instead of causing duplicate IP conflicts
     
     # Create mesh sync for IGP underlay
     mesh_sync = MeshSync(
@@ -141,6 +161,9 @@ async def main():
         logger.info("✅ Mesh network initialized")
     except Exception as e:
         logger.warning(f"Mesh sync failed (will retry): {e}")
+    
+    # Set mesh_sync on daemon for periodic sync (retry failed tunnels)
+    daemon.mesh_sync = mesh_sync
     
     # Create API server
     api_app = create_app()

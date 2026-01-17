@@ -162,7 +162,7 @@ class MeshSync:
                 peer_node_id=peer["node_id"],
                 peer_loopback=peer["loopback"],
                 peer_endpoint=peer.get("endpoint"),
-                peer_port=peer.get("port", 51820),
+                peer_port=peer.get("port", self.mesh_port),  # Use same port as local mesh_port
             )
             
             self.wg.write_interface(interface_name, config)
