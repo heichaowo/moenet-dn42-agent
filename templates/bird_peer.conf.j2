@@ -104,7 +104,28 @@ protocol bgp dn42_{{ peer.asn }} from dn42_peer {
 {% endif %}
 {% else %}
     # Single protocol (no MP-BGP)
-{% if peer.bgp.peer_ipv4 %}
+{% if peer.bgp.peer_ipv4 and peer.bgp.peer_ipv6 %}
+    # Dual stack without MP-BGP: need separate protocols - this one for IPv6
+    ipv6 { 
+        import where peer_{{ asn }}_import_filter(); 
+        export where peer_{{ asn }}_export_filter(); 
+    };
+}
+
+# Second BGP protocol for IPv4 (same WG interface, different neighbor)
+protocol bgp dn42_{{ peer.asn }}_v4 from dn42_peer {
+{% if peer.contact %}
+    description "{{ peer.contact }} (IPv4)";
+{% endif %}
+    neighbor {{ peer.bgp.peer_ipv4 }} as {{ peer.asn }};
+{% if peer.bgp.local_ipv4 %}
+    source address {{ peer.bgp.local_ipv4.split('/')[0] if '/' in peer.bgp.local_ipv4 else peer.bgp.local_ipv4 }};
+{% endif %}
+    ipv4 { 
+        import where peer_{{ asn }}_import_filter(); 
+        export where peer_{{ asn }}_export_filter(); 
+    };
+{% elif peer.bgp.peer_ipv4 %}
     ipv4 { 
         import where peer_{{ asn }}_import_filter(); 
         export where peer_{{ asn }}_export_filter(); 
@@ -116,5 +137,4 @@ protocol bgp dn42_{{ peer.asn }} from dn42_peer {
     };
 {% endif %}
 {% endif %}
-}
 
