@@ -148,12 +148,29 @@ Agent 在本地提供 HTTP API (默认端口 54321)：
 
 ## 自动注册与 Node ID
 
-Agent 首次启动时会自动向 Control Plane 注册：
+Agent 启动时会向 Control Plane 注册节点信息：
 
 1. 检测节点类型 (RR/Edge) 根据 hostname
-2. 上报 IP 地址、agent 版本
-3. Control Plane 自动分配唯一 `node_id` (1-62)
-4. Agent 将 `node_id` 持久化到 `config.json`，避免重启后依赖 CP
+2. 上报 IP 地址、region、agent 版本等信息
+3. 发送 `config.json` 中的 `node_id`（如果有）
+4. **Control Plane 数据库为权威来源**：
+   - 如果 CP 已有该节点的 `node_id`，以 CP 为准
+   - 如果 Agent 发送了 `node_id` 且 CP 中无值，CP 会接受 Agent 的值
+5. Agent 将 CP 返回的 `node_id` 持久化到 `config.json`
+
+### Node ID 数据流
+
+```
+Terraform (dn42_nodes.tf)
+    ↓
+Ansible host_vars (node_id)
+    ↓
+Agent config.json (初始部署)
+    ↓
+Control Plane 数据库 ← 权威来源
+    ↓
+Agent 从 CP 获取 node_id 并持久化
+```
 
 ### Node ID 与 IP 分配
 
@@ -170,7 +187,7 @@ Agent 自动配置 `dummy0` 接口：
 - **不会添加** 整个 `/26` 或 `/48` 前缀（这会导致路由问题）
 - 清理旧的/过时的地址
 
-无需手动在 Control Plane 添加节点！
+**注意**: 新节点应在 Terraform `dn42_nodes.tf` 中定义 `node_id`，通过 Ansible 部署。
 
 ## last_state.json
 
