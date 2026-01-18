@@ -54,6 +54,57 @@ def _persist_node_id(config_path: str, node_id: int) -> None:
         logger.warning(f"Failed to persist node_id: {e}")
 
 
+def _get_public_ip(version: int = 4) -> str:
+    """Detect public IP address via external service.
+    
+    Args:
+        version: 4 for IPv4, 6 for IPv6
+        
+    Returns:
+        Public IP string or empty string on failure
+    """
+    import urllib.request
+    import socket
+    
+    # Use different services for v4 and v6
+    if version == 4:
+        services = [
+            "https://api.ipify.org",
+            "https://ipv4.icanhazip.com",
+            "https://v4.ident.me",
+        ]
+    else:
+        services = [
+            "https://api6.ipify.org", 
+            "https://ipv6.icanhazip.com",
+            "https://v6.ident.me",
+        ]
+    
+    for url in services:
+        try:
+            # Force IPv4 or IPv6 based on version
+            if version == 6:
+                # Create socket that only uses IPv6
+                orig_getaddrinfo = socket.getaddrinfo
+                def getaddrinfo_v6(host, port, family=0, type=0, proto=0, flags=0):
+                    return orig_getaddrinfo(host, port, socket.AF_INET6, type, proto, flags)
+                socket.getaddrinfo = getaddrinfo_v6
+            
+            req = urllib.request.Request(url, headers={'User-Agent': 'moenet-agent/1.0'})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                ip = resp.read().decode().strip()
+                if ip:
+                    logger.debug(f"Detected public IPv{version}: {ip}")
+                    return ip
+        except Exception as e:
+            logger.debug(f"Failed to get IPv{version} from {url}: {e}")
+        finally:
+            if version == 6:
+                socket.getaddrinfo = orig_getaddrinfo
+    
+    return ""
+
+
 async def main():
     """Main entry point."""
     from aiohttp import web
@@ -97,6 +148,22 @@ async def main():
     logger.info("Registering with control plane...")
     node_id = config.node_id  # Start with config value
     
+    # Detect public IPs if not configured
+    public_ipv4 = getattr(config, 'public_ipv4', '') or ''
+    public_ipv6 = getattr(config, 'public_ipv6', '') or ''
+    
+    if not public_ipv4:
+        logger.info("Detecting public IPv4...")
+        public_ipv4 = _get_public_ip(4)
+        if public_ipv4:
+            logger.info(f"Detected public IPv4: {public_ipv4}")
+    
+    if not public_ipv6:
+        logger.info("Detecting public IPv6...")
+        public_ipv6 = _get_public_ip(6)
+        if public_ipv6:
+            logger.info(f"Detected public IPv6: {public_ipv6}")
+    
     try:
         is_rr = "rr" in config.node_name.lower()
         registration = await client.register_node(
@@ -104,8 +171,8 @@ async def main():
             region=getattr(config, 'region', 'unknown'),
             location=getattr(config, 'location', ''),
             provider=getattr(config, 'provider', ''),
-            ipv4=getattr(config, 'public_ipv4', '') or None,
-            ipv6=getattr(config, 'public_ipv6', '') or None,
+            ipv4=public_ipv4 or None,
+            ipv6=public_ipv6 or None,
             dn42_ipv4=getattr(config, 'dn42_ipv4', None),
             dn42_ipv6=getattr(config, 'dn42_ipv6', None),
             is_rr=is_rr,
