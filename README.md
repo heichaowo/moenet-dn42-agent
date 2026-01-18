@@ -31,6 +31,11 @@ moenet-dn42-agent/
 │   ├── daemon/
 │   │   ├── sync.py           # Peer 配置同步守护进程
 │   │   └── mesh_sync.py      # Mesh 网络同步
+│   ├── community/             # BGP Community 模块
+│   │   ├── constants.py      # DN42 + MoeNet Community 常量
+│   │   ├── manager.py        # Community 管理器
+│   │   ├── latency_probe.py  # 延迟探测 daemon
+│   │   └── mtu_probe.py      # MTU 探测
 │   └── api/
 │       └── server.py         # HTTP API (供 bot 调用)
 ├── templates/
@@ -135,6 +140,9 @@ Agent 在本地提供 HTTP API (默认端口 54321)：
 | `GET /status` | 获取 Agent 状态 |
 | `POST /sync` | 立即触发配置同步 |
 | `GET /peers` | 查看当前活跃的 peers |
+| `GET /communities` | BGP Community 统计 |
+| `POST /communities/probe` | 触发延迟探测 |
+| `GET /communities/peer/{asn}` | 获取 peer community 设置 |
 
 **安全**: Agent API 端口通过防火墙限制，仅允许 Control Plane IP 访问。
 
