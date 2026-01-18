@@ -9,6 +9,7 @@
 - 🌐 配置 Loopback 接口 (dummy0) 及 DN42 地址
 - 💾 保存 last_state.json 用于灾难恢复
 - ❤️ 上报健康状态
+- 🔀 **非 MP-BGP 双栈支持** - 自动创建独立的 IPv4/IPv6 BGP 协议
 
 ## 项目结构
 
