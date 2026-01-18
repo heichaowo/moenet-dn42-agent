@@ -101,6 +101,7 @@ protocol bgp dn42_{{ peer.asn }} from dn42_peer {
         import where peer_{{ asn }}_import_filter(); 
         export where peer_{{ asn }}_export_filter(); 
     };
+}
 {% endif %}
 {% else %}
     # Single protocol (no MP-BGP)
@@ -130,11 +131,13 @@ protocol bgp dn42_{{ peer.asn }}_v4 from dn42_peer {
         import where peer_{{ asn }}_import_filter(); 
         export where peer_{{ asn }}_export_filter(); 
     };
+}
 {% else %}
     ipv6 { 
         import where peer_{{ asn }}_import_filter(); 
         export where peer_{{ asn }}_export_filter(); 
     };
+}
 {% endif %}
 {% endif %}
 
