@@ -70,27 +70,16 @@ protocol bgp dn42_{{ peer.asn }} from dn42_peer {
 {% if peer.contact %}
     description "{{ peer.contact }}";
 {% endif %}
-{# Get peer's IPs (support both naming conventions) #}
-{% set peer_v6 = peer.bgp.dn42_ipv6 or peer.bgp.peer_ipv6 %}
-{% set peer_v4 = peer.bgp.dn42_ipv4 or peer.bgp.peer_ipv4 %}
-{# Get our local IPs (support both naming conventions) #}
-{% set local_v6 = peer.bgp.local_ipv6 or peer.bgp.request_lla %}
-{% set local_v4 = peer.bgp.local_ipv4 %}
-{# Check if using link-local #}
-{% set is_linklocal = peer_v6 and (peer_v6|lower).startswith('fe80::') %}
-
-    neighbor {{ peer_v6 or peer_v4 }} as {{ peer.asn }};
-{% if is_linklocal %}
+    neighbor {{ peer.bgp.peer_ipv6 or peer.bgp.peer_ipv4 }} as {{ peer.asn }};
+{% if peer.bgp.peer_ipv6 and (peer.bgp.peer_ipv6|lower)[:6] == 'fe80::' %}
     interface "dn42-{{ peer.asn }}";
 {% endif %}
-{# Source address: use local_v6 for any IPv6 peering, strip /prefix if present #}
-{% if local_v6 %}
-{% set src_v6 = local_v6.split('/')[0] if '/' in local_v6 else local_v6 %}
-    source address {{ src_v6 }};
+{% if peer.bgp.local_ipv6 %}
+    source address {{ peer.bgp.local_ipv6.split('/')[0] if '/' in peer.bgp.local_ipv6 else peer.bgp.local_ipv6 }};
 {% endif %}
 {% if peer.bgp.mpbgp %}
     # MP-BGP enabled
-{% if peer_v4 and peer_v6 %}
+{% if peer.bgp.peer_ipv4 and peer.bgp.peer_ipv6 %}
     ipv4 { 
         import where peer_{{ asn }}_import_filter(); 
         export where peer_{{ asn }}_export_filter(); 
@@ -102,7 +91,7 @@ protocol bgp dn42_{{ peer.asn }} from dn42_peer {
         import where peer_{{ asn }}_import_filter(); 
         export where peer_{{ asn }}_export_filter(); 
     };
-{% elif peer_v4 %}
+{% elif peer.bgp.peer_ipv4 %}
     ipv4 { 
         import where peer_{{ asn }}_import_filter(); 
         export where peer_{{ asn }}_export_filter(); 
@@ -115,7 +104,7 @@ protocol bgp dn42_{{ peer.asn }} from dn42_peer {
 {% endif %}
 {% else %}
     # Single protocol (no MP-BGP)
-{% if peer_v4 %}
+{% if peer.bgp.peer_ipv4 %}
     ipv4 { 
         import where peer_{{ asn }}_import_filter(); 
         export where peer_{{ asn }}_export_filter(); 
