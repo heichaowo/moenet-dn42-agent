@@ -109,6 +109,7 @@ async def main():
             dn42_ipv4=getattr(config, 'dn42_ipv4', None),
             dn42_ipv6=getattr(config, 'dn42_ipv6', None),
             is_rr=is_rr,
+            node_id=getattr(config, 'node_id', None),  # Send config node_id to CP
             allow_cn_peers=getattr(config, 'allow_cn_peers', False),
             supports_ipv4=getattr(config, 'supports_ipv4', True),
             supports_ipv6=getattr(config, 'supports_ipv6', True),
