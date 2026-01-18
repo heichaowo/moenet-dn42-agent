@@ -165,6 +165,33 @@ async def main():
     # Set mesh_sync on daemon for periodic sync (retry failed tunnels)
     daemon.mesh_sync = mesh_sync
     
+    # Initialize latency probe for automatic community updates
+    latency_probe = None
+    if getattr(config, 'enable_latency_probe', True):
+        try:
+            from community.latency_probe import LatencyProbe
+            from community.manager import CommunityManager
+            
+            latency_probe = LatencyProbe(
+                probe_interval=getattr(config, 'latency_probe_interval', 300),
+            )
+            
+            community_manager = CommunityManager(bird_ctl=config.bird_ctl)
+            
+            # Set callback to update community settings when latency changes
+            def on_latency_update(asn: int, tier: int, rtt_ms: float):
+                settings = community_manager.get_peer_communities(asn)
+                settings["latency_tier"] = tier
+                settings["last_rtt"] = round(rtt_ms, 2)
+                community_manager.set_peer_communities(asn, settings)
+                logger.info(f"AS{asn} latency updated: {rtt_ms:.2f}ms (tier {tier})")
+            
+            latency_probe.set_update_callback(on_latency_update)
+            await latency_probe.start()
+            logger.info("✅ Latency probe daemon started")
+        except Exception as e:
+            logger.warning(f"Latency probe initialization failed: {e}")
+    
     # Create API server
     api_app = create_app()
     api_runner = web.AppRunner(api_app)
@@ -179,6 +206,8 @@ async def main():
     def shutdown_handler():
         logger.info("Shutdown signal received")
         asyncio.create_task(daemon.stop())
+        if latency_probe:
+            asyncio.create_task(latency_probe.stop())
     
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, shutdown_handler)
@@ -190,6 +219,8 @@ async def main():
         logger.error(f"Daemon error: {e}")
         raise
     finally:
+        if latency_probe:
+            await latency_probe.stop()
         await api_runner.cleanup()
         await client.close()
     

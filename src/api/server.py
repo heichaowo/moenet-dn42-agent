@@ -305,6 +305,253 @@ async def remove_from_blacklist(request):
     return web.json_response({"result": "removed", "asn": asn})
 
 
+# ==== Community Management Endpoints ====
+
+# Lazy initialization of community components
+_community_manager = None
+_latency_probe = None
+
+
+def get_community_manager():
+    """Get or create the community manager singleton."""
+    global _community_manager
+    if _community_manager is None:
+        from community.manager import CommunityManager
+        _community_manager = CommunityManager(bird_ctl=config.bird_ctl)
+    return _community_manager
+
+
+def get_latency_probe():
+    """Get or create the latency probe singleton."""
+    global _latency_probe
+    if _latency_probe is None:
+        from community.latency_probe import LatencyProbe
+        _latency_probe = LatencyProbe()
+        
+        # Set callback to update community manager
+        def update_community(asn: int, tier: int, rtt_ms: float):
+            manager = get_community_manager()
+            settings = manager.get_peer_communities(asn)
+            settings["latency_tier"] = tier
+            settings["last_rtt"] = rtt_ms
+            manager.set_peer_communities(asn, settings)
+        
+        _latency_probe.set_update_callback(update_community)
+    return _latency_probe
+
+
+@routes.get("/communities")
+async def get_community_stats(request):
+    """Get community usage statistics across all routes."""
+    manager = get_community_manager()
+    stats = manager.get_community_stats()
+    return web.json_response(stats)
+
+
+@routes.post("/communities/route")
+async def get_route_communities(request):
+    """Query communities for a specific route/prefix."""
+    data = await request.json()
+    prefix = data.get("prefix", "")
+    
+    if not prefix:
+        return web.json_response({"error": "Missing prefix"}, status=400)
+    
+    manager = get_community_manager()
+    route = manager.get_route_communities(prefix)
+    
+    if not route:
+        return web.json_response({"error": "Route not found"}, status=404)
+    
+    return web.json_response(route.to_dict())
+
+
+@routes.get("/communities/peer/{asn}")
+async def get_peer_communities(request):
+    """Get community settings for a peer."""
+    asn = int(request.match_info["asn"])
+    
+    manager = get_community_manager()
+    settings = manager.get_peer_communities(asn)
+    
+    # Also get routes from this peer
+    routes = manager.get_peer_routes_communities(asn, limit=5)
+    
+    return web.json_response({
+        "asn": asn,
+        "settings": settings,
+        "sample_routes": [r.to_dict() for r in routes],
+    })
+
+
+@routes.post("/communities/peer/{asn}")
+async def set_peer_communities(request):
+    """Set community settings for a peer.
+    
+    Body: {
+        "latency_tier": 3,  // 0-8
+        "bandwidth": "1g",  // 100k, 10m, 100m, 1g, 10g
+        "crypto": "encrypted",  // none, unsafe, encrypted, latency
+        "region": "as-e"  // eu, na-e, na-c, na-w, as-e, as-se, etc.
+    }
+    """
+    asn = int(request.match_info["asn"])
+    data = await request.json()
+    
+    manager = get_community_manager()
+    manager.set_peer_communities(asn, data)
+    
+    # Generate filter config
+    filter_snippet = manager.generate_peer_filter(asn)
+    
+    return web.json_response({
+        "result": "ok",
+        "asn": asn,
+        "settings": data,
+        "filter_snippet": filter_snippet,
+    })
+
+
+@routes.get("/communities/filters")
+async def list_filter_rules(request):
+    """List all community filter rules."""
+    manager = get_community_manager()
+    rules = manager.list_filter_rules()
+    return web.json_response({"rules": rules})
+
+
+@routes.post("/communities/filters")
+async def add_filter_rule(request):
+    """Add a community filter rule.
+    
+    Body: {
+        "name": "block_high_latency",
+        "match_type": "community",  // community, large_community, as_path
+        "match_value": "(64511, 8..9)",
+        "action": "reject"  // accept, reject, modify
+        "modify_commands": []  // For action=modify
+    }
+    """
+    data = await request.json()
+    
+    from community.manager import FilterRule
+    
+    rule = FilterRule(
+        name=data.get("name", "unnamed"),
+        match_type=data.get("match_type", "community"),
+        match_value=data.get("match_value", ""),
+        action=data.get("action", "reject"),
+        modify_commands=data.get("modify_commands", []),
+    )
+    
+    manager = get_community_manager()
+    manager.add_filter_rule(rule)
+    
+    return web.json_response({"result": "added", "rule": data})
+
+
+@routes.delete("/communities/filters/{name}")
+async def delete_filter_rule(request):
+    """Delete a filter rule by name."""
+    name = request.match_info["name"]
+    
+    manager = get_community_manager()
+    if manager.remove_filter_rule(name):
+        return web.json_response({"result": "removed", "name": name})
+    else:
+        return web.json_response({"error": "Rule not found"}, status=404)
+
+
+# ==== Latency Probe Endpoints ====
+
+@routes.get("/communities/probe")
+async def get_probe_stats(request):
+    """Get latency probe statistics."""
+    probe = get_latency_probe()
+    return web.json_response(probe.get_all_stats())
+
+
+@routes.post("/communities/probe/add")
+async def add_probe_peer(request):
+    """Add a peer to latency probing.
+    
+    Body: {
+        "asn": 4242420337,
+        "endpoint": "10.0.0.1"  // Tunnel endpoint IP
+    }
+    """
+    data = await request.json()
+    asn = data.get("asn")
+    endpoint = data.get("endpoint")
+    
+    if not asn or not endpoint:
+        return web.json_response({"error": "Missing asn or endpoint"}, status=400)
+    
+    probe = get_latency_probe()
+    probe.add_peer(asn, endpoint)
+    
+    return web.json_response({"result": "added", "asn": asn, "endpoint": endpoint})
+
+
+@routes.post("/communities/probe/remove")
+async def remove_probe_peer(request):
+    """Remove a peer from latency probing."""
+    data = await request.json()
+    asn = data.get("asn")
+    
+    if not asn:
+        return web.json_response({"error": "Missing asn"}, status=400)
+    
+    probe = get_latency_probe()
+    probe.remove_peer(asn)
+    
+    return web.json_response({"result": "removed", "asn": asn})
+
+
+@routes.post("/communities/probe/now/{asn}")
+async def probe_peer_now(request):
+    """Immediately probe a specific peer."""
+    asn = int(request.match_info["asn"])
+    
+    probe = get_latency_probe()
+    result = probe.probe_now(asn)
+    
+    if result:
+        return web.json_response(result.to_dict())
+    else:
+        return web.json_response({"error": "Peer not found in probe list"}, status=404)
+
+
+@routes.get("/communities/probe/peer/{asn}")
+async def get_probe_peer_stats(request):
+    """Get latency statistics for a specific peer."""
+    asn = int(request.match_info["asn"])
+    
+    probe = get_latency_probe()
+    stats = probe.get_peer_stats(asn)
+    
+    if stats:
+        return web.json_response(stats)
+    else:
+        return web.json_response({"error": "Peer not found"}, status=404)
+
+
+@routes.post("/communities/probe/start")
+async def start_latency_probe(request):
+    """Start the latency probe daemon."""
+    probe = get_latency_probe()
+    await probe.start()
+    return web.json_response({"result": "started"})
+
+
+@routes.post("/communities/probe/stop")
+async def stop_latency_probe(request):
+    """Stop the latency probe daemon."""
+    probe = get_latency_probe()
+    await probe.stop()
+    return web.json_response({"result": "stopped"})
+
+
 def create_app() -> web.Application:
     """Create aiohttp application."""
     app = web.Application(middlewares=[auth_middleware])

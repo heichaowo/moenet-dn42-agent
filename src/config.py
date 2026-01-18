@@ -60,6 +60,10 @@ class AgentConfig:
     allow_cn_peers: bool = False   # Allow Chinese Mainland peers
     supports_ipv4: bool = True
     supports_ipv6: bool = True
+    
+    # Latency probe settings
+    enable_latency_probe: bool = True   # Enable automatic latency probing
+    latency_probe_interval: int = 300   # Probe interval in seconds (5 min default)
 
 
 def load_config(config_path: Optional[str] = None) -> AgentConfig:
@@ -109,6 +113,9 @@ def load_config(config_path: Optional[str] = None) -> AgentConfig:
             dn42_ipv4_prefix=data.get("dn42_ipv4_prefix", "172.22.188.0/26"),
             dn42_ipv6_prefix=data.get("dn42_ipv6_prefix", "fd00:4242:7777::/48"),
             node_id=data.get("node_id", 0),
+            # Latency probe settings
+            enable_latency_probe=data.get("enable_latency_probe", True),
+            latency_probe_interval=data.get("latency_probe_interval", 300),
         )
     
     # Fall back to environment variables
