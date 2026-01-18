@@ -5,6 +5,7 @@ HTTP API for bot commands (ping, trace, route, peer management)
 """
 import asyncio
 import logging
+import os
 import shlex
 import subprocess
 from typing import Optional
@@ -272,37 +273,162 @@ async def get_peer_stats(request):
 
 # ==== Blacklist Endpoints ====
 
+# Blacklist file path - generates BIRD function syntax
+BLACKLIST_FILE = "/etc/bird/blacklist.conf"
+
+
+def load_blacklist() -> set:
+    """Load blacklist ASNs from file.
+    
+    Parses the BIRD function syntax to extract ASN numbers.
+    """
+    if not os.path.exists(BLACKLIST_FILE):
+        return set()
+    
+    asns = set()
+    try:
+        with open(BLACKLIST_FILE) as f:
+            content = f.read()
+            # Extract ASNs from: bgp_path ~ [= * [ASN1, ASN2, ...] * =]
+            import re
+            match = re.search(r'\[(\d+(?:,\s*\d+)*)\]', content)
+            if match:
+                asn_str = match.group(1)
+                for asn in asn_str.split(','):
+                    asn = asn.strip()
+                    if asn.isdigit():
+                        asns.add(int(asn))
+    except Exception as e:
+        logger.error(f"Failed to load blacklist: {e}")
+    
+    return asns
+
+
+def save_blacklist(asns: set) -> bool:
+    """Save blacklist as BIRD function syntax and reload config.
+    
+    Generates a BIRD function that checks if the AS-path contains
+    any of the blacklisted ASNs.
+    """
+    try:
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(BLACKLIST_FILE), exist_ok=True)
+        
+        with open(BLACKLIST_FILE, 'w') as f:
+            f.write("# Blacklist - Managed by moenet-agent\n")
+            f.write("# DO NOT EDIT MANUALLY - changes will be overwritten\n")
+            f.write("#\n")
+            f.write("# This file is included by bird.conf and provides is_blacklisted()\n")
+            f.write("# to check if a route passes through any blacklisted ASN.\n\n")
+            
+            f.write("function is_blacklisted() -> bool {\n")
+            if asns:
+                asn_list = ", ".join(str(a) for a in sorted(asns))
+                # Match any route that passes through these ASNs
+                f.write(f"    return bgp_path ~ [= * [{asn_list}] * =];\n")
+            else:
+                f.write("    return false;  # No ASNs in blacklist\n")
+            f.write("}\n")
+        
+        # Reload BIRD config
+        result = birdc("configure")
+        if result and "Reconfigured" in result:
+            logger.info(f"Blacklist saved with {len(asns)} ASNs, BIRD reconfigured")
+            return True
+        else:
+            logger.warning(f"Blacklist saved but BIRD reconfigure may have failed: {result}")
+            return True  # File was saved, even if BIRD reload had issues
+            
+    except Exception as e:
+        logger.error(f"Failed to save blacklist: {e}")
+        return False
+
+
 @routes.get("/blacklist")
 async def get_blacklist(request):
-    """Get blacklist from BIRD filter."""
-    # This would read from a blacklist file or BIRD filter
-    return web.json_response({"blocked": []})
+    """Get current blacklist.
+    
+    Returns list of blocked ASNs.
+    """
+    blocked = sorted(load_blacklist())
+    return web.json_response({
+        "blocked": blocked,
+        "count": len(blocked),
+    })
 
 
 @routes.post("/blacklist/add")
 async def add_to_blacklist(request):
-    """Add ASN to blacklist."""
+    """Add ASN to blacklist.
+    
+    Body: {"asn": 4242421234}
+    """
     data = await request.json()
     asn = data.get("asn")
     
     if not asn:
         return web.json_response({"error": "Missing ASN"}, status=400)
     
-    # TODO: Update BIRD filter and reload
-    return web.json_response({"result": "added", "asn": asn})
+    try:
+        asn = int(asn)
+    except (ValueError, TypeError):
+        return web.json_response({"error": "Invalid ASN format"}, status=400)
+    
+    blacklist = load_blacklist()
+    if asn in blacklist:
+        return web.json_response({
+            "result": "already_blocked",
+            "asn": asn,
+            "total": len(blacklist),
+        })
+    
+    blacklist.add(asn)
+    if save_blacklist(blacklist):
+        logger.info(f"Added AS{asn} to blacklist")
+        return web.json_response({
+            "result": "added",
+            "asn": asn,
+            "total": len(blacklist),
+        })
+    else:
+        return web.json_response({"error": "Failed to save blacklist"}, status=500)
 
 
 @routes.post("/blacklist/remove")
 async def remove_from_blacklist(request):
-    """Remove ASN from blacklist."""
+    """Remove ASN from blacklist.
+    
+    Body: {"asn": 4242421234}
+    """
     data = await request.json()
     asn = data.get("asn")
     
     if not asn:
         return web.json_response({"error": "Missing ASN"}, status=400)
     
-    # TODO: Update BIRD filter and reload
-    return web.json_response({"result": "removed", "asn": asn})
+    try:
+        asn = int(asn)
+    except (ValueError, TypeError):
+        return web.json_response({"error": "Invalid ASN format"}, status=400)
+    
+    blacklist = load_blacklist()
+    if asn not in blacklist:
+        return web.json_response({
+            "result": "not_found",
+            "asn": asn,
+            "total": len(blacklist),
+        })
+    
+    blacklist.discard(asn)
+    if save_blacklist(blacklist):
+        logger.info(f"Removed AS{asn} from blacklist")
+        return web.json_response({
+            "result": "removed",
+            "asn": asn,
+            "total": len(blacklist),
+        })
+    else:
+        return web.json_response({"error": "Failed to save blacklist"}, status=500)
 
 
 # ==== Community Management Endpoints ====

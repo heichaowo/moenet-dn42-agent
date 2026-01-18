@@ -143,6 +143,9 @@ Agent 在本地提供 HTTP API (默认端口 54321)：
 | `GET /communities` | BGP Community 统计 |
 | `POST /communities/probe` | 触发延迟探测 |
 | `GET /communities/peer/{asn}` | 获取 peer community 设置 |
+| `GET /blacklist` | 获取 ASN 黑名单 |
+| `POST /blacklist/add` | 添加 ASN 到黑名单 |
+| `POST /blacklist/remove` | 从黑名单移除 ASN |
 
 **安全**: Agent API 端口通过防火墙限制，仅允许 Control Plane IP 访问。
 
