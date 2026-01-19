@@ -2,53 +2,6 @@
 # Peer: AS{{ peer.asn }} ({{ peer.name }})
 {% set asn = peer.asn %}
 {% set com = peer.community | default({}) %}
-{% set latency_tier = com.latency_tier | default(5) %}
-
-# ---- Per-Peer Filter Functions ----
-function peer_{{ asn }}_import_filter() {
-    # Apply base DN42 import checks
-    if !is_dn42_prefix() then return false;
-    if !check_roa() then return false;
-    
-    # Update local_pref based on latency communities
-    update_local_pref_from_latency();
-    
-{% if com.local_pref_adjust is defined %}
-    # Per-peer local_pref adjustment
-    bgp_local_pref = bgp_local_pref + {{ com.local_pref_adjust }};
-{% endif %}
-
-{% if com.actions and 'reject_high_latency' in com.actions %}
-    # Reject high latency routes (tier >= 7)
-    if ((64511, 8) ~ bgp_community) then return false;
-    if ((64511, 9) ~ bgp_community) then return false;
-{% endif %}
-
-    return true;
-}
-
-function peer_{{ asn }}_export_filter() {
-    # Apply base DN42 export checks
-    if !is_dn42_prefix() then return false;
-    
-    # Add our communities with per-peer latency tier
-    add_our_communities({{ latency_tier }});
-    
-{% if com.no_export %}
-    # Do not export any routes to this peer
-    return false;
-{% endif %}
-
-{% if com.prepend_count is defined and com.prepend_count > 0 %}
-    # AS path prepending
-{% for _ in range(com.prepend_count) %}
-    bgp_path.prepend(MY_ASN);
-{% endfor %}
-{% endif %}
-
-    return true;
-}
-
 
 protocol bgp dn42_{{ peer.asn }} from dn42_peer {
 {% if peer.contact %}
@@ -65,25 +18,25 @@ protocol bgp dn42_{{ peer.asn }} from dn42_peer {
     # MP-BGP enabled
 {% if peer.bgp.peer_ipv4 and peer.bgp.peer_ipv6 %}
     ipv4 { 
-        import where peer_{{ asn }}_import_filter(); 
-        export where peer_{{ asn }}_export_filter(); 
+        import where dn42_import_filter(); 
+        export where dn42_export_filter(); 
 {% if peer.bgp.extended_nexthop %}
         extended next hop on; 
 {% endif %}
     };
     ipv6 { 
-        import where peer_{{ asn }}_import_filter(); 
-        export where peer_{{ asn }}_export_filter(); 
+        import where dn42_import_filter(); 
+        export where dn42_export_filter(); 
     };
 {% elif peer.bgp.peer_ipv4 %}
     ipv4 { 
-        import where peer_{{ asn }}_import_filter(); 
-        export where peer_{{ asn }}_export_filter(); 
+        import where dn42_import_filter(); 
+        export where dn42_export_filter(); 
     };
 {% else %}
     ipv6 { 
-        import where peer_{{ asn }}_import_filter(); 
-        export where peer_{{ asn }}_export_filter(); 
+        import where dn42_import_filter(); 
+        export where dn42_export_filter(); 
     };
 }
 {% endif %}
@@ -92,8 +45,8 @@ protocol bgp dn42_{{ peer.asn }} from dn42_peer {
 {% if peer.bgp.peer_ipv4 and peer.bgp.peer_ipv6 %}
     # Dual stack without MP-BGP: need separate protocols - this one for IPv6
     ipv6 { 
-        import where peer_{{ asn }}_import_filter(); 
-        export where peer_{{ asn }}_export_filter(); 
+        import where dn42_import_filter(); 
+        export where dn42_export_filter(); 
     };
 }
 
@@ -107,21 +60,20 @@ protocol bgp dn42_{{ peer.asn }}_v4 from dn42_peer {
     source address {{ peer.bgp.local_ipv4.split('/')[0] if '/' in peer.bgp.local_ipv4 else peer.bgp.local_ipv4 }};
 {% endif %}
     ipv4 { 
-        import where peer_{{ asn }}_import_filter(); 
-        export where peer_{{ asn }}_export_filter(); 
+        import where dn42_import_filter(); 
+        export where dn42_export_filter(); 
     };
 {% elif peer.bgp.peer_ipv4 %}
     ipv4 { 
-        import where peer_{{ asn }}_import_filter(); 
-        export where peer_{{ asn }}_export_filter(); 
+        import where dn42_import_filter(); 
+        export where dn42_export_filter(); 
     };
 }
 {% else %}
     ipv6 { 
-        import where peer_{{ asn }}_import_filter(); 
-        export where peer_{{ asn }}_export_filter(); 
+        import where dn42_import_filter(); 
+        export where dn42_export_filter(); 
     };
 }
 {% endif %}
 {% endif %}
-
