@@ -42,15 +42,19 @@ class SyncDaemon:
         logger.info("Syncing config from control-plane...")
         config = await self.client.get_config()
         if not config:
+            logger.warning("No config received from control-plane")
             return False
+        
+        logger.info(f"Received config: {len(config.get('peers', []))} eBGP peers, {len(config.get('ibgp_peers', []))} iBGP peers")
         
         remote_hash = config.get("version_hash") or self.client.compute_config_hash(config)
         
-        # Always sync iBGP (config file might be missing even if hash matches)
-        ibgp_peers = config.get("ibgp_peers", [])
-        if ibgp_peers:
-            local_ipv6 = config.get("local_ipv6") or config.get("node_info", {}).get("dn42_ipv6")
-            self._sync_ibgp(ibgp_peers, local_ipv6=local_ipv6)
+        # iBGP sync is now handled by ibgp_sync.py in main.py
+        # Commenting out to avoid conflict with new ibgp_sync module
+        # ibgp_peers = config.get("ibgp_peers", [])
+        # if ibgp_peers:
+        #     local_ipv6 = config.get("local_ipv6") or config.get("node_info", {}).get("dn42_ipv6")
+        #     self._sync_ibgp(ibgp_peers, local_ipv6=local_ipv6)
         
         # Always check all peers - _add_peer uses hash comparison for efficiency
         current = {p["asn"] for p in self.state.get_applied_peers()}
