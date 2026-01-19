@@ -40,3 +40,30 @@ def render_ibgp_peer(
         peer_loopback=peer_loopback,
         asn=asn,
     )
+
+
+def render_ibgp_config(config: dict) -> str:
+    """Render iBGP configuration for all peers (legacy compatibility).
+    
+    This function is for backward compatibility with old sync.py.
+    New code should use render_ibgp_peer() directly.
+    
+    Args:
+        config: Dict containing:
+            - peers: List of peer dicts with 'name' and 'loopback'
+            - local_asn: Local AS number
+            
+    Returns:
+        Combined iBGP configuration for all peers
+    """
+    peers = config.get("peers", [])
+    asn = config.get("local_asn", 4242420998)
+    
+    configs = []
+    for peer in peers:
+        peer_name = peer.get("name")
+        peer_loopback = peer.get("loopback")
+        if peer_name and peer_loopback:
+            configs.append(render_ibgp_peer(peer_name, peer_loopback, asn))
+    
+    return "\n".join(configs)
