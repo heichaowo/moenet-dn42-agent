@@ -15,8 +15,9 @@ protocol bgp dn42_{{ peer.asn }} from dn42_peer {
     source address {{ peer.bgp.local_ipv6.split('/')[0] if '/' in peer.bgp.local_ipv6 else peer.bgp.local_ipv6 }};
 {% endif %}
 {% if peer.bgp.mpbgp %}
-    # MP-BGP enabled
+{# ============ MP-BGP Mode ============ #}
 {% if peer.bgp.peer_ipv4 and peer.bgp.peer_ipv6 %}
+{# Dual-stack MP-BGP: both address families in one session #}
     ipv4 { 
         import filter dn42_import_filter; 
         export filter dn42_export_filter; 
@@ -28,12 +29,16 @@ protocol bgp dn42_{{ peer.asn }} from dn42_peer {
         import filter dn42_import_filter; 
         export filter dn42_export_filter; 
     };
+}
 {% elif peer.bgp.peer_ipv4 %}
+{# IPv4-only MP-BGP #}
     ipv4 { 
         import filter dn42_import_filter; 
         export filter dn42_export_filter; 
     };
+}
 {% else %}
+{# IPv6-only MP-BGP #}
     ipv6 { 
         import filter dn42_import_filter; 
         export filter dn42_export_filter; 
@@ -41,9 +46,9 @@ protocol bgp dn42_{{ peer.asn }} from dn42_peer {
 }
 {% endif %}
 {% else %}
-    # Single protocol (no MP-BGP)
+{# ============ Non-MP-BGP Mode ============ #}
 {% if peer.bgp.peer_ipv4 and peer.bgp.peer_ipv6 %}
-    # Dual stack without MP-BGP: need separate protocols - this one for IPv6
+{# Dual stack without MP-BGP: need separate protocols #}
     ipv6 { 
         import filter dn42_import_filter; 
         export filter dn42_export_filter; 
@@ -63,13 +68,16 @@ protocol bgp dn42_{{ peer.asn }}_v4 from dn42_peer {
         import filter dn42_import_filter; 
         export filter dn42_export_filter; 
     };
+}
 {% elif peer.bgp.peer_ipv4 %}
+{# IPv4-only non-MP-BGP #}
     ipv4 { 
         import filter dn42_import_filter; 
         export filter dn42_export_filter; 
     };
 }
 {% else %}
+{# IPv6-only non-MP-BGP #}
     ipv6 { 
         import filter dn42_import_filter; 
         export filter dn42_export_filter; 
