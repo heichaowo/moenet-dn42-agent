@@ -32,10 +32,12 @@ PublicKey = {{ peer_public_key }}
 {% if peer_endpoint %}
 Endpoint = {{ peer_endpoint }}:{{ peer_port }}
 {% endif %}
-# P2P mode: full AllowedIPs (using wg set, no auto-routing)
-AllowedIPs = fe80::/10, ff00::/8, {{ peer_loopback }}/128
+# P2P mode: full AllowedIPs for transit routing
+# Includes entire loopback subnet so any node's traffic can be forwarded
+AllowedIPs = fe80::/10, ff00::/8, fd00:4242:7777::/64
 PersistentKeepalive = 25
 """
+
 
 
 def generate_wg_keypair() -> tuple[str, str]:
