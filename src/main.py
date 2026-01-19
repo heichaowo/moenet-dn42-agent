@@ -28,6 +28,7 @@ from executor.bird import BirdExecutor
 from executor.wireguard import WireGuardExecutor
 from daemon.sync import SyncDaemon
 from daemon.mesh_sync import MeshSync
+from daemon.ibgp_sync import IBGPSync
 from executor.loopback import LoopbackExecutor
 
 # Configure logging
@@ -229,6 +230,19 @@ async def main():
         logger.info("✅ Mesh network initialized")
     except Exception as e:
         logger.warning(f"Mesh sync failed (will retry): {e}")
+    
+    # Initialize iBGP peer configurations
+    logger.info("Syncing iBGP configurations...")
+    ibgp_sync = IBGPSync(
+        client=client,
+        bird_executor=bird_executor,
+        node_id=node_id,
+    )
+    try:
+        await ibgp_sync.sync_ibgp()
+        logger.info("✅ iBGP peers configured")
+    except Exception as e:
+        logger.warning(f"iBGP sync failed (will retry): {e}")
     
     # Set mesh_sync on daemon for periodic sync (retry failed tunnels)
     daemon.mesh_sync = mesh_sync
