@@ -29,8 +29,8 @@ protocol babel babel_igp {
         
         # RTT-based cost - REQUIRED for mesh networks
         rtt cost 96;            # Additional cost based on RTT
-        rtt min 10 ms;          # Start adding cost above 10ms
-        rtt max 200 ms;         # Full cost applied at 200ms
+        rtt min 50 ms;          # Start adding cost above 50ms
+        rtt max 1000 ms;        # Full cost applied at 1000ms (high for intercontinental)
         
         hello interval 4 s;
         update interval 16 s;
