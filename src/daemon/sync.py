@@ -117,11 +117,13 @@ class SyncDaemon:
         bird_needs_update = file_hash(bird_path) != hashlib.md5(expected_bird.encode()).hexdigest()
         
         # Update WireGuard if needed
-        if peer.get("tunnel", {}).get("type") == "wireguard" and wg_needs_update:
-            self.firewall.allow_port(listen_port)
-            self.wg.write_interface(asn, expected_wg)
+        if peer.get("tunnel", {}).get("type") == "wireguard":
+            if wg_needs_update:
+                self.firewall.allow_port(listen_port)
+                self.wg.write_interface(asn, expected_wg)
+                logger.info(f"Updated WG config for AS{asn}")
+            # Always ensure interface is up (even if config unchanged)
             self.wg.up(asn)
-            logger.info(f"Updated WG config for AS{asn}")
         
         # Update BIRD if needed
         if bird_needs_update:
