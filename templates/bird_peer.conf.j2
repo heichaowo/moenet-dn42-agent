@@ -2,23 +2,7 @@
 # Peer: AS{{ peer.asn }} ({{ peer.name }})
 {% set asn = peer.asn %}
 {% set com = peer.community | default({}) %}
-
-# ---- Per-Peer Community Settings ----
-{% if com.latency_tier is defined %}
-define PEER_{{ asn }}_LATENCY_TIER = {{ com.latency_tier }};
-{% else %}
-define PEER_{{ asn }}_LATENCY_TIER = 5;  # Default: ~148ms
-{% endif %}
-
-{% if com.bandwidth %}
-{% set bw_map = {'100k': 24, '10m': 25, '100m': 21, '1g': 23, '10g': 22} %}
-define PEER_{{ asn }}_BANDWIDTH = (64511, {{ bw_map.get(com.bandwidth, 23) }});
-{% endif %}
-
-{% if com.region %}
-{% set region_map = {'eu': 41, 'na-e': 42, 'na-c': 43, 'na-w': 44, 'ca': 45, 'sa': 46, 'af': 47, 'as-s': 48, 'as-se': 49, 'as-e': 50, 'oc': 51, 'me': 52, 'as-n': 53} %}
-define PEER_{{ asn }}_REGION = (64511, {{ region_map.get(com.region, 50) }});
-{% endif %}
+{% set latency_tier = com.latency_tier | default(5) %}
 
 # ---- Per-Peer Filter Functions ----
 function peer_{{ asn }}_import_filter() {
@@ -48,7 +32,7 @@ function peer_{{ asn }}_export_filter() {
     if !is_dn42_prefix() then return false;
     
     # Add our communities with per-peer latency tier
-    add_our_communities(PEER_{{ asn }}_LATENCY_TIER);
+    add_our_communities({{ latency_tier }});
     
 {% if com.no_export %}
     # Do not export any routes to this peer
