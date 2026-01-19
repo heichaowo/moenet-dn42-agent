@@ -18,25 +18,25 @@ protocol bgp dn42_{{ peer.asn }} from dn42_peer {
     # MP-BGP enabled
 {% if peer.bgp.peer_ipv4 and peer.bgp.peer_ipv6 %}
     ipv4 { 
-        import where dn42_import_filter(); 
-        export where dn42_export_filter(); 
+        import filter dn42_import_filter; 
+        export filter dn42_export_filter; 
 {% if peer.bgp.extended_nexthop %}
         extended next hop on; 
 {% endif %}
     };
     ipv6 { 
-        import where dn42_import_filter(); 
-        export where dn42_export_filter(); 
+        import filter dn42_import_filter; 
+        export filter dn42_export_filter; 
     };
 {% elif peer.bgp.peer_ipv4 %}
     ipv4 { 
-        import where dn42_import_filter(); 
-        export where dn42_export_filter(); 
+        import filter dn42_import_filter; 
+        export filter dn42_export_filter; 
     };
 {% else %}
     ipv6 { 
-        import where dn42_import_filter(); 
-        export where dn42_export_filter(); 
+        import filter dn42_import_filter; 
+        export filter dn42_export_filter; 
     };
 }
 {% endif %}
@@ -45,8 +45,8 @@ protocol bgp dn42_{{ peer.asn }} from dn42_peer {
 {% if peer.bgp.peer_ipv4 and peer.bgp.peer_ipv6 %}
     # Dual stack without MP-BGP: need separate protocols - this one for IPv6
     ipv6 { 
-        import where dn42_import_filter(); 
-        export where dn42_export_filter(); 
+        import filter dn42_import_filter; 
+        export filter dn42_export_filter; 
     };
 }
 
@@ -60,19 +60,19 @@ protocol bgp dn42_{{ peer.asn }}_v4 from dn42_peer {
     source address {{ peer.bgp.local_ipv4.split('/')[0] if '/' in peer.bgp.local_ipv4 else peer.bgp.local_ipv4 }};
 {% endif %}
     ipv4 { 
-        import where dn42_import_filter(); 
-        export where dn42_export_filter(); 
+        import filter dn42_import_filter; 
+        export filter dn42_export_filter; 
     };
 {% elif peer.bgp.peer_ipv4 %}
     ipv4 { 
-        import where dn42_import_filter(); 
-        export where dn42_export_filter(); 
+        import filter dn42_import_filter; 
+        export filter dn42_export_filter; 
     };
 }
 {% else %}
     ipv6 { 
-        import where dn42_import_filter(); 
-        export where dn42_export_filter(); 
+        import filter dn42_import_filter; 
+        export filter dn42_export_filter; 
     };
 }
 {% endif %}
