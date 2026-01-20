@@ -678,6 +678,116 @@ async def stop_latency_probe(request):
     return web.json_response({"result": "stopped"})
 
 
+# ==== Maintenance Mode Endpoints (RFC 8326 Graceful Shutdown) ====
+
+# Track maintenance mode state
+_maintenance_mode = False
+
+
+@routes.get("/maintenance")
+async def get_maintenance_status(request):
+    """Get current maintenance mode status."""
+    return web.json_response({
+        "maintenance_mode": _maintenance_mode,
+        "node": config.node_name,
+    })
+
+
+@routes.post("/maintenance/start")
+async def start_maintenance(request):
+    """Start maintenance mode - graceful shutdown.
+    
+    This disables all BGP peers gracefully, allowing traffic to drain
+    to other paths before the node goes down for maintenance.
+    
+    Process:
+    1. Disable all eBGP peers (sends NOTIFICATION with GRACEFUL_SHUTDOWN)
+    2. Wait for peers to reroute traffic
+    """
+    global _maintenance_mode
+    
+    if _maintenance_mode:
+        return web.json_response({
+            "result": "already_in_maintenance",
+            "node": config.node_name,
+        })
+    
+    results = []
+    disabled_peers = []
+    
+    # Get all eBGP peers (dn42_* protocols, excluding internal)
+    bird_result = birdc("show protocols")
+    if bird_result:
+        for line in bird_result.splitlines():
+            # Match dn42_XXXXXXX patterns (eBGP peers)
+            if "dn42_" in line and "BGP" in line and "dn42_internal" not in line.lower():
+                parts = line.split()
+                if len(parts) >= 1:
+                    peer_name = parts[0]
+                    # Skip iBGP peers
+                    if peer_name.startswith("ibgp_"):
+                        continue
+                    
+                    # Disable the peer (BIRD will send GRACEFUL_SHUTDOWN notification)
+                    result = birdc(f"disable {peer_name}")
+                    disabled_peers.append(peer_name)
+                    results.append(f"{peer_name}: {result or 'disabled'}")
+    
+    _maintenance_mode = True
+    logger.info(f"Maintenance mode STARTED - disabled {len(disabled_peers)} peers")
+    
+    return web.json_response({
+        "result": "maintenance_started",
+        "node": config.node_name,
+        "disabled_peers": disabled_peers,
+        "details": results,
+    })
+
+
+@routes.post("/maintenance/stop")
+async def stop_maintenance(request):
+    """Stop maintenance mode - bring node back online.
+    
+    Re-enables all BGP peers that were disabled during maintenance.
+    """
+    global _maintenance_mode
+    
+    if not _maintenance_mode:
+        return web.json_response({
+            "result": "not_in_maintenance",
+            "node": config.node_name,
+        })
+    
+    results = []
+    enabled_peers = []
+    
+    # Get all eBGP peers and re-enable them
+    bird_result = birdc("show protocols")
+    if bird_result:
+        for line in bird_result.splitlines():
+            if "dn42_" in line and "BGP" in line and "dn42_internal" not in line.lower():
+                parts = line.split()
+                if len(parts) >= 1:
+                    peer_name = parts[0]
+                    if peer_name.startswith("ibgp_"):
+                        continue
+                    
+                    # Enable the peer
+                    result = birdc(f"enable {peer_name}")
+                    enabled_peers.append(peer_name)
+                    results.append(f"{peer_name}: {result or 'enabled'}")
+    
+    _maintenance_mode = False
+    logger.info(f"Maintenance mode STOPPED - enabled {len(enabled_peers)} peers")
+    
+    return web.json_response({
+        "result": "maintenance_stopped",
+        "node": config.node_name,
+        "enabled_peers": enabled_peers,
+        "details": results,
+    })
+
+
 def create_app() -> web.Application:
     """Create aiohttp application."""
     app = web.Application(middlewares=[auth_middleware])
