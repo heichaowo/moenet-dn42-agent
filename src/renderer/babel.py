@@ -7,7 +7,7 @@ Supports per-interface cost/metric for P2P mesh mode.
 Key design points:
 1. RTT cost enabled for tunnel interfaces
 2. Type tunnel for WireGuard mesh interfaces
-3. Only import/export /128 loopback addresses (no DN42 full table!)
+3. Import/export both IPv4 (/32) and IPv6 (/128) loopback addresses
 4. Babel only for node-to-node reachability, iBGP for DN42 routes
 5. Wildcard interface matching for P2P mode (dn42-wg-igp-*)
 """
@@ -42,6 +42,20 @@ protocol babel babel_igp {
         rxcost 1;               # Very low cost for local interface
         hello interval 4 s;
         update interval 16 s;
+    };
+    
+    ipv4 {
+        # Exchange IPv4 loopback addresses for iBGP next-hop reachability
+        import filter {
+            # Only accept /32 loopback addresses within our loopback range
+            if net.len = 32 && net ~ 172.22.188.0/26 then accept;
+            reject;
+        };
+        export filter {
+            # Only export our own loopback address
+            if net.len = 32 && net ~ 172.22.188.0/26 then accept;
+            reject;
+        };
     };
     
     ipv6 {
