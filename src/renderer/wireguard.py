@@ -13,15 +13,8 @@ class WireGuardRenderer:
         tunnel = peer.get("tunnel", {})
         bgp = peer.get("bgp", {})
         
-        # AllowedIPs: peer's IPs (strip /prefix if present) + DN42 ranges
-        allowed_ips = []
-        if bgp.get("peer_ipv4"):
-            v4 = bgp["peer_ipv4"].split("/")[0] if "/" in bgp["peer_ipv4"] else bgp["peer_ipv4"]
-            allowed_ips.append(f"{v4}/32")
-        if bgp.get("peer_ipv6"):
-            v6 = bgp["peer_ipv6"].split("/")[0] if "/" in bgp["peer_ipv6"] else bgp["peer_ipv6"]
-            allowed_ips.append(f"{v6}/128")
-        allowed_ips.extend(["172.20.0.0/14", "10.0.0.0/8", "fd00::/8"])
+        # AllowedIPs: Full tunnel mode - all IPv4, IPv6 ULA, and link-local
+        allowed_ips = ["0.0.0.0/0", "fd00::/8", "fe80::/64"]
         
         # Local addresses for WireGuard interface (our IPs)
         wg_local_addresses = []
