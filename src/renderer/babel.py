@@ -28,22 +28,22 @@ protocol babel babel_igp {
         rxcost 32;              # Base cost for tunnel
         
         # RTT-based cost - REQUIRED for mesh networks
-        # Significantly increased thresholds for unstable intercontinental links
+        # Increased thresholds for better tolerance of unstable RR-RR links
         rtt cost 96;            # Additional cost based on RTT
-        rtt min 200 ms;         # Start adding cost above 200ms (was 100ms)
-        rtt max 5000 ms;        # Full cost applied at 5000ms (was 2000ms)
+        rtt min 100 ms;         # Start adding cost above 100ms (was 50ms)
+        rtt max 2000 ms;        # Full cost applied at 2000ms (was 1000ms)
         
-        # Large intervals to tolerate multi-second outages
-        hello interval 10 s;    # was 6s - allows ~30s before neighbor timeout
-        update interval 40 s;   # was 24s
+        # Increased intervals to reduce sensitivity to intermittent packet loss
+        hello interval 6 s;     # was 4s
+        update interval 24 s;   # was 16s
     };
     
     # Dummy0 interface for loopback address announcement
     interface "dummy0" {
         type wired;
         rxcost 1;               # Very low cost for local interface
-        hello interval 10 s;    # Synchronized with tunnel interfaces
-        update interval 40 s;   # Synchronized with tunnel interfaces
+        hello interval 6 s;     # Synchronized with tunnel interfaces
+        update interval 24 s;   # Synchronized with tunnel interfaces
     };
     
     ipv4 {
