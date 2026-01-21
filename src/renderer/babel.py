@@ -42,8 +42,8 @@ protocol babel babel_igp {
     interface "dummy0" {
         type wired;
         rxcost 1;               # Very low cost for local interface
-        hello interval 4 s;
-        update interval 16 s;
+        hello interval 6 s;     # Synchronized with tunnel interfaces
+        update interval 24 s;   # Synchronized with tunnel interfaces
     };
     
     ipv4 {

@@ -34,7 +34,7 @@ Endpoint = {{ peer_endpoint }}:{{ peer_port }}
 {% endif %}
 # P2P mode: full AllowedIPs for transit routing
 # Includes entire loopback subnets so any node's traffic can be forwarded
-AllowedIPs = fe80::/10, ff00::/8, fd00:4242:7777::/64, 172.22.188.0/24
+AllowedIPs = fe80::/10, ff00::/8, fd00:4242:7777::/64, 172.22.188.0/26
 PersistentKeepalive = 25
 """
 
