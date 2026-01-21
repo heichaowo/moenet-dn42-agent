@@ -25,25 +25,25 @@ protocol babel babel_igp {
     
     interface "dn42-wg-igp-*" {
         type tunnel;            # WireGuard is a tunnel interface
-        rxcost 32;              # Base cost for tunnel
+        rxcost 64;              # Higher base cost, reduces RTT impact ratio
         
-        # RTT-based cost - REQUIRED for mesh networks
-        # Increased thresholds for better tolerance of unstable RR-RR links
-        rtt cost 96;            # Additional cost based on RTT
-        rtt min 100 ms;         # Start adding cost above 100ms (was 50ms)
-        rtt max 2000 ms;        # Full cost applied at 2000ms (was 1000ms)
+        # Hybrid approach: RTT for path selection, not for reachability
+        # Low RTT weight + extreme threshold = smart routing without 65535
+        rtt cost 32;            # Reduced weight (was 96)
+        rtt min 200 ms;         # Start adding cost above 200ms
+        rtt max 10000 ms;       # Extreme ceiling - RTT up to 10s still just "slow" not "dead"
         
-        # Increased intervals to reduce sensitivity to intermittent packet loss
-        hello interval 6 s;     # was 4s
-        update interval 24 s;   # was 16s
+        # Long intervals for stability on unreliable links
+        hello interval 10 s;    # ~30s before neighbor timeout
+        update interval 40 s;
     };
     
     # Dummy0 interface for loopback address announcement
     interface "dummy0" {
         type wired;
         rxcost 1;               # Very low cost for local interface
-        hello interval 6 s;     # Synchronized with tunnel interfaces
-        update interval 24 s;   # Synchronized with tunnel interfaces
+        hello interval 10 s;    # Match tunnel interfaces
+        update interval 40 s;
     };
     
     ipv4 {
