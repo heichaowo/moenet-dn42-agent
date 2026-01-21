@@ -28,12 +28,14 @@ protocol babel babel_igp {
         rxcost 32;              # Base cost for tunnel
         
         # RTT-based cost - REQUIRED for mesh networks
+        # Increased thresholds for better tolerance of unstable RR-RR links
         rtt cost 96;            # Additional cost based on RTT
-        rtt min 50 ms;          # Start adding cost above 50ms
-        rtt max 1000 ms;        # Full cost applied at 1000ms (high for intercontinental)
+        rtt min 100 ms;         # Start adding cost above 100ms (was 50ms)
+        rtt max 2000 ms;        # Full cost applied at 2000ms (was 1000ms)
         
-        hello interval 4 s;
-        update interval 16 s;
+        # Increased intervals to reduce sensitivity to intermittent packet loss
+        hello interval 6 s;     # was 4s
+        update interval 24 s;   # was 16s
     };
     
     # Dummy0 interface for loopback address announcement

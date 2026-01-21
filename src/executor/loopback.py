@@ -59,9 +59,10 @@ class LoopbackExecutor:
             
             # Note: Only add specific /32 and /128 addresses to the interface
             # The prefixes are announced via BGP from the direct protocol
-            # Do NOT add /48 here - it makes the kernel treat all addresses as local!
+            # Do NOT add /26 or /48 here - it makes the kernel treat all addresses as local!
+            # This would create a connected route that prevents inter-node routing.
             addresses = [
-                (self.dn42_ipv4_prefix, "IPv4 prefix"),
+                # Only the /32 node address, NOT the /26 prefix
                 (f"{ipv4_node}/32", "IPv4 node"),
                 # Only the /128 loopback, NOT the /48 prefix
                 (f"{ipv6_node}/128", "IPv6 node"),
