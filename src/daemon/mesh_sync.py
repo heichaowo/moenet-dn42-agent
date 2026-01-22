@@ -282,14 +282,27 @@ class MeshSync:
         # Cleanup stale interfaces
         self._cleanup_stale_interfaces(active_peer_ids)
 
-        # Write Babel config
+        # Write Babel config only if changed
         babel_config = render_babel_config()
         babel_path = Path(self.bird.config_dir).parent / "babel.conf"
-        babel_path.write_text(babel_config)
-        logger.info("Updated Babel configuration")
         
-        # Reload BIRD
-        self.bird.reload()
+        config_changed = False
+        if babel_path.exists():
+            if babel_path.read_text() != babel_config:
+                babel_path.write_text(babel_config)
+                config_changed = True
+                logger.info("Updated Babel configuration")
+            else:
+                logger.debug("Babel configuration unchanged")
+        else:
+            babel_path.write_text(babel_config)
+            config_changed = True
+            logger.info("Created Babel configuration")
+        
+        # Only reload BIRD if config changed
+        if config_changed:
+            self.bird.reload()
+        
         logger.info("Mesh sync complete (P2P mode)")
         
         return True

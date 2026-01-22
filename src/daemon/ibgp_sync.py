@@ -57,6 +57,7 @@ class IBGPSync:
         logger.info(f"iBGP peers: {len(peers)}")
         
         active_peer_names: Set[str] = set()
+        config_changed = False
         
         for peer in peers:
             peer_name = peer["name"]
@@ -73,28 +74,49 @@ class IBGPSync:
                 asn=DN42_ASN,
             )
             
-            # Write config file
+            # Write config file only if changed
             config_path = IBGP_CONFIG_DIR / f"{safe_name}.conf"
-            config_path.write_text(config)
-            logger.info(f"Configured iBGP peer: {peer_name} -> {peer_loopback}")
+            if config_path.exists():
+                if config_path.read_text() != config:
+                    config_path.write_text(config)
+                    config_changed = True
+                    logger.info(f"Updated iBGP peer: {peer_name} -> {peer_loopback}")
+                else:
+                    logger.debug(f"iBGP peer unchanged: {peer_name}")
+            else:
+                config_path.write_text(config)
+                config_changed = True
+                logger.info(f"Created iBGP peer: {peer_name} -> {peer_loopback}")
         
         # Cleanup stale configs
-        self._cleanup_stale_configs(active_peer_names)
+        stale_removed = self._cleanup_stale_configs(active_peer_names)
+        if stale_removed:
+            config_changed = True
         
-        # Reload BIRD
-        self.bird.reload()
-        logger.info("iBGP sync complete")
+        # Only reload BIRD if config changed
+        if config_changed:
+            self.bird.reload()
+            logger.info("iBGP sync complete (config updated)")
+        else:
+            logger.debug("iBGP sync complete (no changes)")
         
         return True
     
-    def _cleanup_stale_configs(self, active_peers: Set[str]):
+    def _cleanup_stale_configs(self, active_peers: Set[str]) -> bool:
         """Remove iBGP configs for peers that are no longer active.
         
         Args:
             active_peers: Set of active peer names (normalized for filenames)
+            
+        Returns:
+            True if any configs were removed
         """
+        removed = False
         for config_file in IBGP_CONFIG_DIR.glob("*.conf"):
             peer_name = config_file.stem
             if peer_name not in active_peers:
                 logger.info(f"Removing stale iBGP config: {config_file.name}")
                 config_file.unlink()
+                removed = True
+        return removed
+
