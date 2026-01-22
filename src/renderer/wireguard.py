@@ -20,7 +20,9 @@ class WireGuardRenderer:
         peer_ipv6 = bgp.get("peer_ipv6", "")
         if peer_ipv6 and not peer_ipv6.startswith(("fe80::", "fd")):
             # This is a GUA address - add specific /128 for the peer
-            allowed_ips.append(f"{peer_ipv6}/128")
+            # Strip any existing CIDR suffix first
+            addr = peer_ipv6.split("/")[0]
+            allowed_ips.append(f"{addr}/128")
 
         
         # Local addresses for WireGuard interface (our IPs)
