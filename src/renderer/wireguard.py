@@ -13,8 +13,15 @@ class WireGuardRenderer:
         tunnel = peer.get("tunnel", {})
         bgp = peer.get("bgp", {})
         
-        # AllowedIPs: Full tunnel mode - all IPv4, IPv6 ULA, and link-local
+        # AllowedIPs: Base set - all IPv4, IPv6 ULA, and link-local
         allowed_ips = ["0.0.0.0/0", "fd00::/8", "fe80::/64"]
+        
+        # Add GUA (Global Unicast Address) if peer uses it
+        peer_ipv6 = bgp.get("peer_ipv6", "")
+        if peer_ipv6 and not peer_ipv6.startswith(("fe80::", "fd")):
+            # This is a GUA address - add specific /128 for the peer
+            allowed_ips.append(f"{peer_ipv6}/128")
+
         
         # Local addresses for WireGuard interface (our IPs)
         wg_local_addresses = []
