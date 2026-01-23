@@ -697,12 +697,10 @@ async def get_maintenance_status(request):
 async def start_maintenance(request):
     """Start maintenance mode - graceful shutdown.
     
-    This disables all BGP peers gracefully, allowing traffic to drain
-    to other paths before the node goes down for maintenance.
-    
     Process:
-    1. Disable all eBGP peers (sends NOTIFICATION with GRACEFUL_SHUTDOWN)
-    2. Wait for peers to reroute traffic
+    1. Write 'define MAINTENANCE_MODE = true;' to /etc/bird/maintenance.conf
+    2. Reload BIRD configuration
+    3. Traffic will drain via (65535, 0) community
     """
     global _maintenance_mode
     
@@ -712,43 +710,33 @@ async def start_maintenance(request):
             "node": config.node_name,
         })
     
-    results = []
-    disabled_peers = []
+    # 1. Write maintenance flag
+    try:
+        os.makedirs("/etc/bird", exist_ok=True)
+        with open("/etc/bird/maintenance.conf", "w") as f:
+            f.write("define MAINTENANCE_MODE = true;\n")
+    except Exception as e:
+        logger.error(f"Failed to create maintenance.conf: {e}")
+        return web.json_response({"error": f"Failed to write flag: {e}"}, status=500)
     
-    # Get all eBGP peers (dn42_* protocols, excluding internal)
-    bird_result = birdc("show protocols")
-    if bird_result:
-        for line in bird_result.splitlines():
-            # Match dn42_XXXXXXX patterns (eBGP peers)
-            if "dn42_" in line and "BGP" in line and "dn42_internal" not in line.lower():
-                parts = line.split()
-                if len(parts) >= 1:
-                    peer_name = parts[0]
-                    # Skip iBGP peers
-                    if peer_name.startswith("ibgp_"):
-                        continue
-                    
-                    # Disable the peer (BIRD will send GRACEFUL_SHUTDOWN notification)
-                    result = birdc(f"disable {peer_name}")
-                    disabled_peers.append(peer_name)
-                    results.append(f"{peer_name}: {result or 'disabled'}")
+    # 2. Reload BIRD config
+    result = birdc("configure")
+    if not result or "Reconfigured" not in result:
+        logger.warning(f"BIRD reconfigure failed or delayed: {result}")
     
     _maintenance_mode = True
-    logger.info(f"Maintenance mode STARTED - disabled {len(disabled_peers)} peers")
+    logger.info(f"Maintenance mode STARTED - community (65535, 0) attached to all exports")
     
     return web.json_response({
         "result": "maintenance_started",
         "node": config.node_name,
-        "disabled_peers": disabled_peers,
-        "details": results,
+        "bird_status": result or "no output",
     })
 
 
 @routes.post("/maintenance/stop")
 async def stop_maintenance(request):
     """Stop maintenance mode - bring node back online.
-    
-    Re-enables all BGP peers that were disabled during maintenance.
     """
     global _maintenance_mode
     
@@ -758,33 +746,24 @@ async def stop_maintenance(request):
             "node": config.node_name,
         })
     
-    results = []
-    enabled_peers = []
+    # 1. Update maintenance flag to false
+    try:
+        with open("/etc/bird/maintenance.conf", "w") as f:
+            f.write("define MAINTENANCE_MODE = false;\n")
+    except Exception as e:
+        logger.error(f"Failed to reset maintenance.conf: {e}")
+        return web.json_response({"error": f"Failed to reset flag: {e}"}, status=500)
     
-    # Get all eBGP peers and re-enable them
-    bird_result = birdc("show protocols")
-    if bird_result:
-        for line in bird_result.splitlines():
-            if "dn42_" in line and "BGP" in line and "dn42_internal" not in line.lower():
-                parts = line.split()
-                if len(parts) >= 1:
-                    peer_name = parts[0]
-                    if peer_name.startswith("ibgp_"):
-                        continue
-                    
-                    # Enable the peer
-                    result = birdc(f"enable {peer_name}")
-                    enabled_peers.append(peer_name)
-                    results.append(f"{peer_name}: {result or 'enabled'}")
+    # 2. Reload BIRD config
+    result = birdc("configure")
     
     _maintenance_mode = False
-    logger.info(f"Maintenance mode STOPPED - enabled {len(enabled_peers)} peers")
+    logger.info(f"Maintenance mode STOPPED - node normalized")
     
     return web.json_response({
         "result": "maintenance_stopped",
         "node": config.node_name,
-        "enabled_peers": enabled_peers,
-        "details": results,
+        "bird_status": result or "no output",
     })
 
 
