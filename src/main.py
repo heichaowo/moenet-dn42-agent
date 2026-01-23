@@ -19,17 +19,17 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import load_config
-from client.control_plane import ControlPlaneClient
+from core.config import load_config
+from integrations.control_plane import ControlPlaneClient
 from state.manager import StateManager
 from renderer.bird import BirdRenderer
 from renderer.wireguard import WireGuardRenderer
-from executor.bird import BirdExecutor
-from executor.wireguard import WireGuardExecutor
-from daemon.sync import SyncDaemon
-from daemon.mesh_sync import MeshSync
-from daemon.ibgp_sync import IBGPSync
-from executor.loopback import LoopbackExecutor
+from services.bird import BirdExecutor
+from services.wireguard import WireGuardExecutor
+from services.sync import SyncDaemon
+from services.mesh import MeshSync
+from services.ibgp import IBGPSync
+from services.loopback import LoopbackExecutor
 
 # Configure logging
 logging.basicConfig(
@@ -251,8 +251,8 @@ async def main():
     latency_probe = None
     if getattr(config, 'enable_latency_probe', True):
         try:
-            from community.latency_probe import LatencyProbe
-            from community.manager import CommunityManager
+            from services.latency_probe import LatencyProbe
+            from services.manager import CommunityManager
             
             latency_probe = LatencyProbe(
                 probe_interval=getattr(config, 'latency_probe_interval', 300),

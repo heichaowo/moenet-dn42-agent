@@ -12,7 +12,7 @@ from typing import Optional
 
 from aiohttp import web
 
-from config import load_config
+from core.config import load_config
 
 logger = logging.getLogger(__name__)
 config = load_config()
@@ -442,7 +442,7 @@ def get_community_manager():
     """Get or create the community manager singleton."""
     global _community_manager
     if _community_manager is None:
-        from community.manager import CommunityManager
+        from services.manager import CommunityManager
         _community_manager = CommunityManager(bird_ctl=config.bird_ctl)
     return _community_manager
 
@@ -451,7 +451,7 @@ def get_latency_probe():
     """Get or create the latency probe singleton."""
     global _latency_probe
     if _latency_probe is None:
-        from community.latency_probe import LatencyProbe
+        from services.latency_probe import LatencyProbe
         _latency_probe = LatencyProbe()
         
         # Set callback to update community manager
@@ -560,7 +560,7 @@ async def add_filter_rule(request):
     """
     data = await request.json()
     
-    from community.manager import FilterRule
+    from services.manager import FilterRule
     
     rule = FilterRule(
         name=data.get("name", "unnamed"),

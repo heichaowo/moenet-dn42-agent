@@ -1,6 +1,29 @@
-.DS_Store
+# Environment
+.env
+.env.local
+
+# Python
 __pycache__/
 **/__pycache__/
-*.pyc
-*.pyo
-.env
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE/Tools
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+
+# Config (local)
+config.json

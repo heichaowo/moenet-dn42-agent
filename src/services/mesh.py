@@ -17,7 +17,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional, Set
 
-from client.control_plane import ControlPlaneClient
+from integrations.control_plane import ControlPlaneClient
 from renderer.wg_mesh import (
     get_or_create_mesh_key, 
     render_mesh_interface, 
@@ -26,8 +26,8 @@ from renderer.wg_mesh import (
     generate_link_local,
 )
 from renderer.babel import render_babel_config, render_ibgp_peer
-from executor.wireguard import WireGuardExecutor
-from executor.bird import BirdExecutor
+from services.wireguard import WireGuardExecutor
+from services.bird import BirdExecutor
 
 logger = logging.getLogger(__name__)
 

@@ -3,11 +3,11 @@ import asyncio
 import logging
 from typing import Optional
 
-from client.control_plane import ControlPlaneClient
+from integrations.control_plane import ControlPlaneClient
 from state.manager import StateManager
-from executor.bird import BirdExecutor
-from executor.wireguard import WireGuardExecutor
-from executor.firewall import FirewallExecutor
+from services.bird import BirdExecutor
+from services.wireguard import WireGuardExecutor
+from services.firewall import FirewallExecutor
 from renderer.bird import BirdRenderer
 from renderer.wireguard import WireGuardRenderer
 

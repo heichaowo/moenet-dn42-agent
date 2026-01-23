@@ -10,9 +10,9 @@ import logging
 from pathlib import Path
 from typing import Set
 
-from client.control_plane import ControlPlaneClient
+from integrations.control_plane import ControlPlaneClient
 from renderer.ibgp import render_ibgp_peer
-from executor.bird import BirdExecutor
+from services.bird import BirdExecutor
 
 logger = logging.getLogger(__name__)
 
