@@ -19,7 +19,7 @@ NoNewPrivileges=false
 ProtectSystem=false
 ProtectHome=true
 ReadOnlyDirectories=/
-ReadWriteDirectories=/etc/wireguard /etc/bird/peers.d /var/lib/moenet-agent /var/run/bird
+ReadWriteDirectories=/etc/wireguard /etc/bird/peers /var/lib/moenet-agent /var/run/bird
 
 # Logging
 StandardOutput=journal
