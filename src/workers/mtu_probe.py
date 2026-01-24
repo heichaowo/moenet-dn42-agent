@@ -8,6 +8,7 @@ Usage:
     probe = MTUProbe()
     mtu = await probe.probe_mtu("peer.example.com")
 """
+
 import asyncio
 import logging
 from dataclasses import dataclass, field
@@ -29,6 +30,7 @@ ICMP_OVERHEAD = 28
 @dataclass
 class MTUProbeResult:
     """Result of MTU probe."""
+
     target: str
     optimal_mtu: int
     tested_at: float  # timestamp
@@ -36,38 +38,38 @@ class MTUProbeResult:
     is_low_mtu: bool = False  # MTU < 1400
 
 
-@dataclass 
+@dataclass
 class MTUProbe:
     """Probe path MTU to mesh peers."""
-    
+
     # Cache of probe results
     cache: Dict[str, MTUProbeResult] = field(default_factory=dict)
-    
+
     # Timeout for each ping
     timeout: float = 5.0
-    
+
     async def probe_mtu(self, target: str, is_intercontinental: bool = False) -> MTUProbeResult:
         """
         Probe the optimal MTU to a target.
-        
+
         Args:
             target: Hostname or IP to probe
             is_intercontinental: Whether this is an intercontinental link
-        
+
         Returns:
             MTUProbeResult with optimal MTU
         """
         import time
-        
+
         optimal_mtu = MIN_MTU
-        
+
         for mtu in MTU_TEST_VALUES:
             packet_size = mtu - ICMP_OVERHEAD
-            
+
             if await self._ping_with_size(target, packet_size):
                 optimal_mtu = mtu
                 break  # Found working MTU
-        
+
         result = MTUProbeResult(
             target=target,
             optimal_mtu=optimal_mtu,
@@ -75,34 +77,47 @@ class MTUProbe:
             is_intercontinental=is_intercontinental,
             is_low_mtu=(optimal_mtu < 1400),
         )
-        
+
         self.cache[target] = result
-        
-        logger.info(f"MTU probe {target}: {optimal_mtu} "
-                   f"(intercont={is_intercontinental}, low={result.is_low_mtu})")
-        
+
+        logger.info(
+            f"MTU probe {target}: {optimal_mtu} "
+            f"(intercont={is_intercontinental}, low={result.is_low_mtu})"
+        )
+
         return result
-    
+
     async def _ping_with_size(self, target: str, size: int) -> bool:
         """
         Ping target with specific packet size and DF flag.
-        
+
         Args:
             target: Target to ping
             size: Packet size (excluding IP/ICMP headers)
-        
+
         Returns:
             True if ping succeeded, False otherwise
         """
         # Determine if IPv6
         is_ipv6 = ":" in target
-        
+
         if is_ipv6:
             cmd = ["ping6", "-c", "1", "-W", str(int(self.timeout)), "-s", str(size), target]
         else:
             # -M do = set DF flag (don't fragment)
-            cmd = ["ping", "-c", "1", "-W", str(int(self.timeout)), "-M", "do", "-s", str(size), target]
-        
+            cmd = [
+                "ping",
+                "-c",
+                "1",
+                "-W",
+                str(int(self.timeout)),
+                "-M",
+                "do",
+                "-s",
+                str(size),
+                target,
+            ]
+
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -116,12 +131,12 @@ class MTUProbe:
         except Exception as e:
             logger.debug(f"Ping failed for {target} size={size}: {e}")
             return False
-    
+
     def get_cached_mtu(self, target: str) -> Optional[int]:
         """Get cached MTU for target if available."""
         result = self.cache.get(target)
         return result.optimal_mtu if result else None
-    
+
     def should_use_low_mtu(self, target: str) -> bool:
         """Check if target should use low MTU based on cache."""
         result = self.cache.get(target)

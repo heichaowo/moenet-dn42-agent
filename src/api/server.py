@@ -3,6 +3,7 @@ MoeNet DN42 Agent - API Server
 
 HTTP API for bot commands (ping, trace, route, peer management)
 """
+
 import asyncio
 import logging
 import os
@@ -57,12 +58,14 @@ routes = web.RouteTableDef()
 @routes.get("/")
 async def index(request):
     """Health check and node info."""
-    return web.json_response({
-        "status": "ok",
-        "version": config.agent_version,
-        "node": config.node_name,
-        "is_open": config.is_open,
-    })
+    return web.json_response(
+        {
+            "status": "ok",
+            "version": config.agent_version,
+            "node": config.node_name,
+            "is_open": config.is_open,
+        }
+    )
 
 
 @routes.post("/ping")
@@ -71,10 +74,10 @@ async def cmd_ping(request):
     data = await request.json()
     target = data.get("target", "")
     count = min(data.get("count", 4), 10)
-    
+
     if not target:
         return web.json_response({"error": "Missing target"}, status=400)
-    
+
     result = simple_run(f"ping -c {count} -W 2 {target}", timeout=15)
     return web.json_response({"result": result or "Timeout"})
 
@@ -85,16 +88,16 @@ async def cmd_tcping(request):
     data = await request.json()
     target = data.get("target", "")
     port = data.get("port", 80)
-    
+
     if not target:
         return web.json_response({"error": "Missing target"}, status=400)
-    
+
     # Try different tcping implementations
     result = simple_run(f"tcping {target} {port}", timeout=12)
     if result is None:
         # Fallback to nc
         result = simple_run(f"nc -zv -w5 {target} {port}", timeout=10)
-    
+
     return web.json_response({"result": result or "Timeout"})
 
 
@@ -103,10 +106,10 @@ async def cmd_traceroute(request):
     """Execute traceroute command."""
     data = await request.json()
     target = data.get("target", "")
-    
+
     if not target:
         return web.json_response({"error": "Missing target"}, status=400)
-    
+
     result = simple_run(f"traceroute -w 2 -q 1 {target}", timeout=30)
     return web.json_response({"result": result or "Timeout"})
 
@@ -116,16 +119,16 @@ async def cmd_route(request):
     """Query BIRD routing table."""
     data = await request.json()
     target = data.get("target", "")
-    
+
     if not target:
         return web.json_response({"error": "Missing target"}, status=400)
-    
+
     # Determine IPv4 or IPv6
     if ":" in target:
         result = birdc(f"show route for {target} all")
     else:
         result = birdc(f"show route for {target} all")
-    
+
     return web.json_response({"result": result or "Not found"})
 
 
@@ -134,36 +137,39 @@ async def cmd_path(request):
     """Query AS-Path for prefix."""
     data = await request.json()
     target = data.get("target", "")
-    
+
     if not target:
         return web.json_response({"error": "Missing target"}, status=400)
-    
+
     result = birdc(f"show route for {target} all")
-    
+
     # Extract AS path from result
     if result:
         for line in result.splitlines():
             if "BGP.as_path" in line:
                 return web.json_response({"result": line.strip()})
-    
+
     return web.json_response({"result": "Not found"}, status=404)
 
 
 @routes.get("/info")
 async def node_info(request):
     """Get detailed node info."""
-    return web.json_response({
-        "version": config.agent_version,
-        "node": config.node_name,
-        "is_open": config.is_open,
-        "max_peers": config.max_peers,
-        "dn42_ipv4": config.dn42_ipv4,
-        "dn42_ipv6": config.dn42_ipv6,
-        "wg_public_key": config.wg_public_key,
-    })
+    return web.json_response(
+        {
+            "version": config.agent_version,
+            "node": config.node_name,
+            "is_open": config.is_open,
+            "max_peers": config.max_peers,
+            "dn42_ipv4": config.dn42_ipv4,
+            "dn42_ipv6": config.dn42_ipv6,
+            "wg_public_key": config.wg_public_key,
+        }
+    )
 
 
 # ==== Peer Management Endpoints ====
+
 
 @routes.get("/peers")
 async def list_peers(request):
@@ -175,62 +181,65 @@ async def list_peers(request):
             if "BGP" in line:
                 parts = line.split()
                 if len(parts) >= 3:
-                    peers.append({
-                        "name": parts[0],
-                        "proto": parts[1],
-                        "state": parts[3] if len(parts) > 3 else "unknown",
-                    })
+                    peers.append(
+                        {
+                            "name": parts[0],
+                            "proto": parts[1],
+                            "state": parts[3] if len(parts) > 3 else "unknown",
+                        }
+                    )
     return web.json_response({"peers": peers})
 
 
 @routes.post("/peers/restart")
 async def restart_peer(request):
     """Restart a peer tunnel.
-    
+
     Order: BGP ↓ → WG ↓ → WG ↑ → BGP ↑
-    
+
     peer_name should be like 'dn42_4242420337' (BIRD protocol name)
     WG interface is 'dn42-4242420337' (hyphen instead of underscore)
     """
     data = await request.json()
     peer_name = data.get("peer_name", "")
-    
+
     if not peer_name:
         return web.json_response({"error": "Missing peer_name"}, status=400)
-    
+
     # Convert BIRD protocol name to WG interface name
     # dn42_4242420337 -> dn42-4242420337
     wg_interface = peer_name.replace("_", "-")
-    
+
     results = []
-    
+
     # 1. Stop BGP first
     bgp_down = birdc(f"disable {peer_name}")
     results.append(f"BGP disable: {bgp_down or 'ok'}")
-    
+
     # 2. Stop WireGuard (use ip link, wg-quick not always available)
     wg_down = simple_run(f"ip link set {wg_interface} down", timeout=15)
     results.append(f"WG down: {wg_down or 'ok'}")
-    
+
     # 3. Start WireGuard
     wg_up = simple_run(f"ip link set {wg_interface} up", timeout=15)
     results.append(f"WG up: {wg_up or 'ok'}")
-    
+
     # 4. Start BGP
     bgp_up = birdc(f"enable {peer_name}")
     results.append(f"BGP enable: {bgp_up or 'ok'}")
-    
+
     return web.json_response({"result": "restarted", "steps": results})
 
 
 # ==== Statistics Endpoints ====
+
 
 @routes.get("/stats")
 async def get_stats(request):
     """Get node statistics."""
     # Get BIRD stats
     bird_result = birdc("show protocols")
-    
+
     # Count peers
     peer_count = 0
     established = 0
@@ -240,35 +249,39 @@ async def get_stats(request):
                 peer_count += 1
                 if "Established" in line:
                     established += 1
-    
+
     # Get WireGuard stats
     wg_result = simple_run("wg show all transfer", timeout=10)
-    
-    return web.json_response({
-        "node": config.node_name,
-        "peer_count": peer_count,
-        "established": established,
-        "wg_stats": wg_result or "",
-    })
+
+    return web.json_response(
+        {
+            "node": config.node_name,
+            "peer_count": peer_count,
+            "established": established,
+            "wg_stats": wg_result or "",
+        }
+    )
 
 
 @routes.get("/stats/peer/{peer_name}")
 async def get_peer_stats(request):
     """Get stats for specific peer."""
     peer_name = request.match_info["peer_name"]
-    
+
     bird_result = birdc(f"show protocols all {peer_name}")
-    
+
     # Convert BIRD protocol name to WG interface name
     # dn42_4242423374 -> dn42-4242423374
     wg_interface = peer_name.replace("_", "-")
     wg_result = simple_run(f"wg show {wg_interface}", timeout=10)
-    
-    return web.json_response({
-        "peer_name": peer_name,
-        "bird": bird_result or "Not found",
-        "wireguard": wg_result or "Not found",
-    })
+
+    return web.json_response(
+        {
+            "peer_name": peer_name,
+            "bird": bird_result or "Not found",
+            "wireguard": wg_result or "Not found",
+        }
+    )
 
 
 # ==== Blacklist Endpoints ====
@@ -279,48 +292,49 @@ BLACKLIST_FILE = "/etc/bird/blacklist.conf"
 
 def load_blacklist() -> set:
     """Load blacklist ASNs from file.
-    
+
     Parses the BIRD function syntax to extract ASN numbers.
     """
     if not os.path.exists(BLACKLIST_FILE):
         return set()
-    
+
     asns = set()
     try:
         with open(BLACKLIST_FILE) as f:
             content = f.read()
             # Extract ASNs from: bgp_path ~ [= * [ASN1, ASN2, ...] * =]
             import re
-            match = re.search(r'\[(\d+(?:,\s*\d+)*)\]', content)
+
+            match = re.search(r"\[(\d+(?:,\s*\d+)*)\]", content)
             if match:
                 asn_str = match.group(1)
-                for asn in asn_str.split(','):
+                for asn in asn_str.split(","):
                     asn = asn.strip()
                     if asn.isdigit():
                         asns.add(int(asn))
     except Exception as e:
         logger.error(f"Failed to load blacklist: {e}")
-    
+
     return asns
 
 
 def save_blacklist(asns: set) -> bool:
     """Save blacklist as BIRD function syntax and reload config.
-    
+
     Generates a BIRD function that checks if the AS-path contains
     any of the blacklisted ASNs.
     """
     try:
         # Ensure directory exists
         os.makedirs(os.path.dirname(BLACKLIST_FILE), exist_ok=True)
-        
-        with open(BLACKLIST_FILE, 'w') as f:
+
+        with open(BLACKLIST_FILE, "w") as f:
             f.write("# Blacklist - Managed by moenet-agent\n")
             f.write("# DO NOT EDIT MANUALLY - changes will be overwritten\n")
             f.write("#\n")
             f.write("# This file is included by bird.conf and provides is_blacklisted()\n")
             f.write("# to check if a route passes through any blacklisted ASN.\n\n")
-            
+
             f.write("function is_blacklisted() -> bool {\n")
             if asns:
                 asn_list = ", ".join(str(a) for a in sorted(asns))
@@ -329,7 +343,7 @@ def save_blacklist(asns: set) -> bool:
             else:
                 f.write("    return false;  # No ASNs in blacklist\n")
             f.write("}\n")
-        
+
         # Reload BIRD config
         result = birdc("configure")
         if result and "Reconfigured" in result:
@@ -338,7 +352,7 @@ def save_blacklist(asns: set) -> bool:
         else:
             logger.warning(f"Blacklist saved but BIRD reconfigure may have failed: {result}")
             return True  # File was saved, even if BIRD reload had issues
-            
+
     except Exception as e:
         logger.error(f"Failed to save blacklist: {e}")
         return False
@@ -347,49 +361,55 @@ def save_blacklist(asns: set) -> bool:
 @routes.get("/blacklist")
 async def get_blacklist(request):
     """Get current blacklist.
-    
+
     Returns list of blocked ASNs.
     """
     blocked = sorted(load_blacklist())
-    return web.json_response({
-        "blocked": blocked,
-        "count": len(blocked),
-    })
+    return web.json_response(
+        {
+            "blocked": blocked,
+            "count": len(blocked),
+        }
+    )
 
 
 @routes.post("/blacklist/add")
 async def add_to_blacklist(request):
     """Add ASN to blacklist.
-    
+
     Body: {"asn": 4242421234}
     """
     data = await request.json()
     asn = data.get("asn")
-    
+
     if not asn:
         return web.json_response({"error": "Missing ASN"}, status=400)
-    
+
     try:
         asn = int(asn)
     except (ValueError, TypeError):
         return web.json_response({"error": "Invalid ASN format"}, status=400)
-    
+
     blacklist = load_blacklist()
     if asn in blacklist:
-        return web.json_response({
-            "result": "already_blocked",
-            "asn": asn,
-            "total": len(blacklist),
-        })
-    
+        return web.json_response(
+            {
+                "result": "already_blocked",
+                "asn": asn,
+                "total": len(blacklist),
+            }
+        )
+
     blacklist.add(asn)
     if save_blacklist(blacklist):
         logger.info(f"Added AS{asn} to blacklist")
-        return web.json_response({
-            "result": "added",
-            "asn": asn,
-            "total": len(blacklist),
-        })
+        return web.json_response(
+            {
+                "result": "added",
+                "asn": asn,
+                "total": len(blacklist),
+            }
+        )
     else:
         return web.json_response({"error": "Failed to save blacklist"}, status=500)
 
@@ -397,36 +417,40 @@ async def add_to_blacklist(request):
 @routes.post("/blacklist/remove")
 async def remove_from_blacklist(request):
     """Remove ASN from blacklist.
-    
+
     Body: {"asn": 4242421234}
     """
     data = await request.json()
     asn = data.get("asn")
-    
+
     if not asn:
         return web.json_response({"error": "Missing ASN"}, status=400)
-    
+
     try:
         asn = int(asn)
     except (ValueError, TypeError):
         return web.json_response({"error": "Invalid ASN format"}, status=400)
-    
+
     blacklist = load_blacklist()
     if asn not in blacklist:
-        return web.json_response({
-            "result": "not_found",
-            "asn": asn,
-            "total": len(blacklist),
-        })
-    
+        return web.json_response(
+            {
+                "result": "not_found",
+                "asn": asn,
+                "total": len(blacklist),
+            }
+        )
+
     blacklist.discard(asn)
     if save_blacklist(blacklist):
         logger.info(f"Removed AS{asn} from blacklist")
-        return web.json_response({
-            "result": "removed",
-            "asn": asn,
-            "total": len(blacklist),
-        })
+        return web.json_response(
+            {
+                "result": "removed",
+                "asn": asn,
+                "total": len(blacklist),
+            }
+        )
     else:
         return web.json_response({"error": "Failed to save blacklist"}, status=500)
 
@@ -443,6 +467,7 @@ def get_community_manager():
     global _community_manager
     if _community_manager is None:
         from services.manager import CommunityManager
+
         _community_manager = CommunityManager(bird_ctl=config.bird_ctl)
     return _community_manager
 
@@ -452,8 +477,9 @@ def get_latency_probe():
     global _latency_probe
     if _latency_probe is None:
         from services.latency_probe import LatencyProbe
+
         _latency_probe = LatencyProbe()
-        
+
         # Set callback to update community manager
         def update_community(asn: int, tier: int, rtt_ms: float):
             manager = get_community_manager()
@@ -461,7 +487,7 @@ def get_latency_probe():
             settings["latency_tier"] = tier
             settings["last_rtt"] = rtt_ms
             manager.set_peer_communities(asn, settings)
-        
+
         _latency_probe.set_update_callback(update_community)
     return _latency_probe
 
@@ -479,16 +505,16 @@ async def get_route_communities(request):
     """Query communities for a specific route/prefix."""
     data = await request.json()
     prefix = data.get("prefix", "")
-    
+
     if not prefix:
         return web.json_response({"error": "Missing prefix"}, status=400)
-    
+
     manager = get_community_manager()
     route = manager.get_route_communities(prefix)
-    
+
     if not route:
         return web.json_response({"error": "Route not found"}, status=404)
-    
+
     return web.json_response(route.to_dict())
 
 
@@ -496,24 +522,26 @@ async def get_route_communities(request):
 async def get_peer_communities(request):
     """Get community settings for a peer."""
     asn = int(request.match_info["asn"])
-    
+
     manager = get_community_manager()
     settings = manager.get_peer_communities(asn)
-    
+
     # Also get routes from this peer
     routes = manager.get_peer_routes_communities(asn, limit=5)
-    
-    return web.json_response({
-        "asn": asn,
-        "settings": settings,
-        "sample_routes": [r.to_dict() for r in routes],
-    })
+
+    return web.json_response(
+        {
+            "asn": asn,
+            "settings": settings,
+            "sample_routes": [r.to_dict() for r in routes],
+        }
+    )
 
 
 @routes.post("/communities/peer/{asn}")
 async def set_peer_communities(request):
     """Set community settings for a peer.
-    
+
     Body: {
         "latency_tier": 3,  // 0-8
         "bandwidth": "1g",  // 100k, 10m, 100m, 1g, 10g
@@ -523,19 +551,21 @@ async def set_peer_communities(request):
     """
     asn = int(request.match_info["asn"])
     data = await request.json()
-    
+
     manager = get_community_manager()
     manager.set_peer_communities(asn, data)
-    
+
     # Generate filter config
     filter_snippet = manager.generate_peer_filter(asn)
-    
-    return web.json_response({
-        "result": "ok",
-        "asn": asn,
-        "settings": data,
-        "filter_snippet": filter_snippet,
-    })
+
+    return web.json_response(
+        {
+            "result": "ok",
+            "asn": asn,
+            "settings": data,
+            "filter_snippet": filter_snippet,
+        }
+    )
 
 
 @routes.get("/communities/filters")
@@ -549,7 +579,7 @@ async def list_filter_rules(request):
 @routes.post("/communities/filters")
 async def add_filter_rule(request):
     """Add a community filter rule.
-    
+
     Body: {
         "name": "block_high_latency",
         "match_type": "community",  // community, large_community, as_path
@@ -559,9 +589,9 @@ async def add_filter_rule(request):
     }
     """
     data = await request.json()
-    
+
     from services.manager import FilterRule
-    
+
     rule = FilterRule(
         name=data.get("name", "unnamed"),
         match_type=data.get("match_type", "community"),
@@ -569,10 +599,10 @@ async def add_filter_rule(request):
         action=data.get("action", "reject"),
         modify_commands=data.get("modify_commands", []),
     )
-    
+
     manager = get_community_manager()
     manager.add_filter_rule(rule)
-    
+
     return web.json_response({"result": "added", "rule": data})
 
 
@@ -580,7 +610,7 @@ async def add_filter_rule(request):
 async def delete_filter_rule(request):
     """Delete a filter rule by name."""
     name = request.match_info["name"]
-    
+
     manager = get_community_manager()
     if manager.remove_filter_rule(name):
         return web.json_response({"result": "removed", "name": name})
@@ -589,6 +619,7 @@ async def delete_filter_rule(request):
 
 
 # ==== Latency Probe Endpoints ====
+
 
 @routes.get("/communities/probe")
 async def get_probe_stats(request):
@@ -600,7 +631,7 @@ async def get_probe_stats(request):
 @routes.post("/communities/probe/add")
 async def add_probe_peer(request):
     """Add a peer to latency probing.
-    
+
     Body: {
         "asn": 4242420337,
         "endpoint": "10.0.0.1"  // Tunnel endpoint IP
@@ -609,13 +640,13 @@ async def add_probe_peer(request):
     data = await request.json()
     asn = data.get("asn")
     endpoint = data.get("endpoint")
-    
+
     if not asn or not endpoint:
         return web.json_response({"error": "Missing asn or endpoint"}, status=400)
-    
+
     probe = get_latency_probe()
     probe.add_peer(asn, endpoint)
-    
+
     return web.json_response({"result": "added", "asn": asn, "endpoint": endpoint})
 
 
@@ -624,13 +655,13 @@ async def remove_probe_peer(request):
     """Remove a peer from latency probing."""
     data = await request.json()
     asn = data.get("asn")
-    
+
     if not asn:
         return web.json_response({"error": "Missing asn"}, status=400)
-    
+
     probe = get_latency_probe()
     probe.remove_peer(asn)
-    
+
     return web.json_response({"result": "removed", "asn": asn})
 
 
@@ -638,10 +669,10 @@ async def remove_probe_peer(request):
 async def probe_peer_now(request):
     """Immediately probe a specific peer."""
     asn = int(request.match_info["asn"])
-    
+
     probe = get_latency_probe()
     result = probe.probe_now(asn)
-    
+
     if result:
         return web.json_response(result.to_dict())
     else:
@@ -652,10 +683,10 @@ async def probe_peer_now(request):
 async def get_probe_peer_stats(request):
     """Get latency statistics for a specific peer."""
     asn = int(request.match_info["asn"])
-    
+
     probe = get_latency_probe()
     stats = probe.get_peer_stats(asn)
-    
+
     if stats:
         return web.json_response(stats)
     else:
@@ -687,29 +718,33 @@ _maintenance_mode = False
 @routes.get("/maintenance")
 async def get_maintenance_status(request):
     """Get current maintenance mode status."""
-    return web.json_response({
-        "maintenance_mode": _maintenance_mode,
-        "node": config.node_name,
-    })
+    return web.json_response(
+        {
+            "maintenance_mode": _maintenance_mode,
+            "node": config.node_name,
+        }
+    )
 
 
 @routes.post("/maintenance/start")
 async def start_maintenance(request):
     """Start maintenance mode - graceful shutdown.
-    
+
     Process:
     1. Write 'define MAINTENANCE_MODE = true;' to /etc/bird/maintenance.conf
     2. Reload BIRD configuration
     3. Traffic will drain via (65535, 0) community
     """
     global _maintenance_mode
-    
+
     if _maintenance_mode:
-        return web.json_response({
-            "result": "already_in_maintenance",
-            "node": config.node_name,
-        })
-    
+        return web.json_response(
+            {
+                "result": "already_in_maintenance",
+                "node": config.node_name,
+            }
+        )
+
     # 1. Write maintenance flag
     try:
         os.makedirs("/etc/bird", exist_ok=True)
@@ -718,34 +753,37 @@ async def start_maintenance(request):
     except Exception as e:
         logger.error(f"Failed to create maintenance.conf: {e}")
         return web.json_response({"error": f"Failed to write flag: {e}"}, status=500)
-    
+
     # 2. Reload BIRD config
     result = birdc("configure")
     if not result or "Reconfigured" not in result:
         logger.warning(f"BIRD reconfigure failed or delayed: {result}")
-    
+
     _maintenance_mode = True
-    logger.info(f"Maintenance mode STARTED - community (65535, 0) attached to all exports")
-    
-    return web.json_response({
-        "result": "maintenance_started",
-        "node": config.node_name,
-        "bird_status": result or "no output",
-    })
+    logger.info("Maintenance mode STARTED - community (65535, 0) attached to all exports")
+
+    return web.json_response(
+        {
+            "result": "maintenance_started",
+            "node": config.node_name,
+            "bird_status": result or "no output",
+        }
+    )
 
 
 @routes.post("/maintenance/stop")
 async def stop_maintenance(request):
-    """Stop maintenance mode - bring node back online.
-    """
+    """Stop maintenance mode - bring node back online."""
     global _maintenance_mode
-    
+
     if not _maintenance_mode:
-        return web.json_response({
-            "result": "not_in_maintenance",
-            "node": config.node_name,
-        })
-    
+        return web.json_response(
+            {
+                "result": "not_in_maintenance",
+                "node": config.node_name,
+            }
+        )
+
     # 1. Update maintenance flag to false
     try:
         with open("/etc/bird/maintenance.conf", "w") as f:
@@ -753,18 +791,20 @@ async def stop_maintenance(request):
     except Exception as e:
         logger.error(f"Failed to reset maintenance.conf: {e}")
         return web.json_response({"error": f"Failed to reset flag: {e}"}, status=500)
-    
+
     # 2. Reload BIRD config
     result = birdc("configure")
-    
+
     _maintenance_mode = False
-    logger.info(f"Maintenance mode STOPPED - node normalized")
-    
-    return web.json_response({
-        "result": "maintenance_stopped",
-        "node": config.node_name,
-        "bird_status": result or "no output",
-    })
+    logger.info("Maintenance mode STOPPED - node normalized")
+
+    return web.json_response(
+        {
+            "result": "maintenance_stopped",
+            "node": config.node_name,
+            "bird_status": result or "no output",
+        }
+    )
 
 
 def create_app() -> web.Application:
@@ -779,12 +819,12 @@ async def run_api_server():
     app = create_app()
     runner = web.AppRunner(app)
     await runner.setup()
-    
+
     site = web.TCPSite(runner, config.api_host, config.api_port)
     await site.start()
-    
+
     logger.info(f"API server running on {config.api_host}:{config.api_port}")
-    
+
     # Keep running
     while True:
         await asyncio.sleep(3600)

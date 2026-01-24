@@ -1,6 +1,7 @@
 """
 MoeNet DN42 Agent - State Manager
 """
+
 import json
 import logging
 import os
@@ -13,15 +14,15 @@ logger = logging.getLogger(__name__)
 
 class StateManager:
     """Manages last_state.json persistence."""
-    
+
     def __init__(self, state_path: str = "/var/lib/moenet-agent/last_state.json"):
         self.state_path = Path(state_path)
         self._state: Optional[dict] = None
-    
+
     def load(self) -> dict:
         if self._state is not None:
             return self._state
-        
+
         if self.state_path.exists():
             try:
                 with open(self.state_path) as f:
@@ -32,7 +33,7 @@ class StateManager:
         else:
             self._state = self._empty_state()
         return self._state
-    
+
     def save(self) -> bool:
         if self._state is None:
             return False
@@ -47,13 +48,13 @@ class StateManager:
         except Exception as e:
             logger.error(f"Failed to save state: {e}")
             return False
-    
+
     def get_config_hash(self) -> Optional[str]:
         return self.load().get("config_version_hash")
-    
+
     def get_applied_peers(self) -> list:
         return self.load().get("applied_config", {}).get("peers", [])
-    
+
     def update_applied_config(self, peers: list, config_hash: str) -> None:
         state = self.load()
         if state.get("applied_config"):
@@ -62,22 +63,25 @@ class StateManager:
                 "created_at": datetime.utcnow().isoformat() + "Z",
             }
         state["config_version_hash"] = config_hash
-        state["applied_config"] = {"peers": peers, "applied_at": datetime.utcnow().isoformat() + "Z"}
+        state["applied_config"] = {
+            "peers": peers,
+            "applied_at": datetime.utcnow().isoformat() + "Z",
+        }
         self.save()
-    
+
     def update_health(self, health: dict) -> None:
         state = self.load()
         state["health_status"] = {**health, "last_check": datetime.utcnow().isoformat() + "Z"}
         self.save()
-    
+
     def set_node_id(self, node_id: str) -> None:
         state = self.load()
         state["node_id"] = node_id
         self.save()
-    
+
     def get_full_state(self) -> dict:
         return self.load().copy()
-    
+
     def _empty_state(self) -> dict:
         return {
             "version": "2.1.0",

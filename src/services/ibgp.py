@@ -5,7 +5,7 @@ Uses same topology as mesh_sync (RR <-> same-region edges, RR <-> cross-region R
 
 Configuration is written to /etc/bird/ibgp.d/*.conf
 """
-import asyncio
+
 import logging
 from pathlib import Path
 from typing import Set
@@ -22,7 +22,7 @@ DN42_ASN = 4242420998
 
 class IBGPSync:
     """Handles iBGP peer configuration synchronization."""
-    
+
     def __init__(
         self,
         client: ControlPlaneClient,
@@ -33,47 +33,47 @@ class IBGPSync:
         self.bird = bird_executor
         self.node_id = node_id
         self._active_peers: Set[str] = set()
-    
+
     async def sync_ibgp(self) -> bool:
         """Sync iBGP peer configurations.
-        
+
         1. Get mesh config from control plane (includes iBGP peers)
         2. Generate peer configs
         3. Clean up stale configs
         4. Reload BIRD
         """
         logger.info("Syncing iBGP peer configurations...")
-        
+
         # Ensure config directory exists
         IBGP_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        
+
         # Get mesh config (includes iBGP peers)
         mesh_config = await self.client.get_mesh_config()
         if not mesh_config:
             logger.warning("No mesh config available for iBGP sync")
             return False
-        
+
         peers = mesh_config.get("peers", [])
         logger.info(f"iBGP peers: {len(peers)}")
-        
+
         active_peer_names: Set[str] = set()
         config_changed = False
-        
+
         for peer in peers:
             peer_name = peer["name"]
             peer_loopback = peer["loopback"]
-            
+
             # Normalize peer name for filename
             safe_name = peer_name.replace(".", "_").replace("-", "_")
             active_peer_names.add(safe_name)
-            
+
             # Render peer config
             config = render_ibgp_peer(
                 peer_name=peer_name,
                 peer_loopback=peer_loopback,
                 asn=DN42_ASN,
             )
-            
+
             # Write config file only if changed
             config_path = IBGP_CONFIG_DIR / f"{safe_name}.conf"
             if config_path.exists():
@@ -87,27 +87,27 @@ class IBGPSync:
                 config_path.write_text(config)
                 config_changed = True
                 logger.info(f"Created iBGP peer: {peer_name} -> {peer_loopback}")
-        
+
         # Cleanup stale configs
         stale_removed = self._cleanup_stale_configs(active_peer_names)
         if stale_removed:
             config_changed = True
-        
+
         # Only reload BIRD if config changed
         if config_changed:
             self.bird.reload()
             logger.info("iBGP sync complete (config updated)")
         else:
             logger.debug("iBGP sync complete (no changes)")
-        
+
         return True
-    
+
     def _cleanup_stale_configs(self, active_peers: Set[str]) -> bool:
         """Remove iBGP configs for peers that are no longer active.
-        
+
         Args:
             active_peers: Set of active peer names (normalized for filenames)
-            
+
         Returns:
             True if any configs were removed
         """
@@ -119,4 +119,3 @@ class IBGPSync:
                 config_file.unlink()
                 removed = True
         return removed
-

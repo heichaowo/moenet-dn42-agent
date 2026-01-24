@@ -8,6 +8,7 @@ This is a pure agent that:
 3. Reports health status back
 4. Saves last_state.json for disaster recovery
 """
+
 import asyncio
 import json
 import logging
@@ -19,17 +20,16 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
 
+from services.loopback import LoopbackExecutor
+from services.sync import SyncDaemon
+
 from core.config import load_config
 from integrations.control_plane import ControlPlaneClient
-from state.manager import StateManager
-from renderer.bird import BirdRenderer
-from renderer.wireguard import WireGuardRenderer
 from services.bird import BirdExecutor
-from services.wireguard import WireGuardExecutor
-from services.sync import SyncDaemon
-from services.mesh import MeshSync
 from services.ibgp import IBGPSync
-from services.loopback import LoopbackExecutor
+from services.mesh import MeshSync
+from services.wireguard import WireGuardExecutor
+from state.manager import StateManager
 
 # Configure logging
 logging.basicConfig(
@@ -47,8 +47,8 @@ def _persist_node_id(config_path: str, node_id: int) -> None:
         if config_file.exists():
             with open(config_file) as f:
                 data = json.load(f)
-            data['node_id'] = node_id
-            with open(config_file, 'w') as f:
+            data["node_id"] = node_id
+            with open(config_file, "w") as f:
                 json.dump(data, f, indent=2)
             logger.info(f"Persisted node_id={node_id} to {config_path}")
     except Exception as e:
@@ -57,16 +57,16 @@ def _persist_node_id(config_path: str, node_id: int) -> None:
 
 def _get_public_ip(version: int = 4) -> str:
     """Detect public IP address via external service.
-    
+
     Args:
         version: 4 for IPv4, 6 for IPv6
-        
+
     Returns:
         Public IP string or empty string on failure
     """
-    import urllib.request
     import socket
-    
+    import urllib.request
+
     # Use different services for v4 and v6
     if version == 4:
         services = [
@@ -76,22 +76,24 @@ def _get_public_ip(version: int = 4) -> str:
         ]
     else:
         services = [
-            "https://api6.ipify.org", 
+            "https://api6.ipify.org",
             "https://ipv6.icanhazip.com",
             "https://v6.ident.me",
         ]
-    
+
     for url in services:
         try:
             # Force IPv4 or IPv6 based on version
             if version == 6:
                 # Create socket that only uses IPv6
                 orig_getaddrinfo = socket.getaddrinfo
+
                 def getaddrinfo_v6(host, port, family=0, type=0, proto=0, flags=0):
                     return orig_getaddrinfo(host, port, socket.AF_INET6, type, proto, flags)
+
                 socket.getaddrinfo = getaddrinfo_v6
-            
-            req = urllib.request.Request(url, headers={'User-Agent': 'moenet-agent/1.0'})
+
+            req = urllib.request.Request(url, headers={"User-Agent": "moenet-agent/1.0"})
             with urllib.request.urlopen(req, timeout=5) as resp:
                 ip = resp.read().decode().strip()
                 if ip:
@@ -102,38 +104,39 @@ def _get_public_ip(version: int = 4) -> str:
         finally:
             if version == 6:
                 socket.getaddrinfo = orig_getaddrinfo
-    
+
     return ""
 
 
 async def main():
     """Main entry point."""
     from aiohttp import web
+
     from api.server import create_app
-    
+
     # Load configuration (track path for persistence)
     config_path = os.environ.get("AGENT_CONFIG", "/opt/moenet-agent/config.json")
     config = load_config(config_path)
-    
-    logger.info(f"MoeNet DN42 Agent starting...")
+
+    logger.info("MoeNet DN42 Agent starting...")
     logger.info(f"Node: {config.node_name}")
     logger.info(f"Control Plane: {config.control_plane_url}")
     logger.info(f"API Server: {config.api_host}:{config.api_port}")
-    
+
     # Initialize components
     client = ControlPlaneClient(
         base_url=config.control_plane_url,
         node_name=config.node_name,
         api_token=config.control_plane_token,
     )
-    
+
     state_manager = StateManager(config.state_path)
     state_manager.set_node_id(config.node_name)
-    
+
     # Create sync daemon (mesh_sync will be set after it's created)
     bird_executor = BirdExecutor(config.bird_config_dir, config.bird_ctl)
     wg_executor = WireGuardExecutor(config.wg_config_dir)
-    
+
     daemon = SyncDaemon(
         client=client,
         state_manager=state_manager,
@@ -143,52 +146,52 @@ async def main():
         sync_interval=config.sync_interval,
         heartbeat_interval=config.heartbeat_interval,
     )
-    
+
     # Register node with control plane (auto-create if not exists)
     # This MUST happen before loopback setup to get valid node_id
     logger.info("Registering with control plane...")
     node_id = config.node_id  # Start with config value
-    
+
     # Detect public IPs if not configured
-    public_ipv4 = getattr(config, 'public_ipv4', '') or ''
-    public_ipv6 = getattr(config, 'public_ipv6', '') or ''
-    
+    public_ipv4 = getattr(config, "public_ipv4", "") or ""
+    public_ipv6 = getattr(config, "public_ipv6", "") or ""
+
     if not public_ipv4:
         logger.info("Detecting public IPv4...")
         public_ipv4 = _get_public_ip(4)
         if public_ipv4:
             logger.info(f"Detected public IPv4: {public_ipv4}")
-    
+
     if not public_ipv6:
         logger.info("Detecting public IPv6...")
         public_ipv6 = _get_public_ip(6)
         if public_ipv6:
             logger.info(f"Detected public IPv6: {public_ipv6}")
-    
+
     try:
         is_rr = "rr" in config.node_name.lower()
         registration = await client.register_node(
             agent_version=config.agent_version,
-            region=getattr(config, 'region', 'unknown'),
-            location=getattr(config, 'location', ''),
-            provider=getattr(config, 'provider', ''),
+            region=getattr(config, "region", "unknown"),
+            location=getattr(config, "location", ""),
+            provider=getattr(config, "provider", ""),
             ipv4=public_ipv4 or None,
             ipv6=public_ipv6 or None,
-            dn42_ipv4=getattr(config, 'dn42_ipv4', None),
-            dn42_ipv6=getattr(config, 'dn42_ipv6', None),
+            dn42_ipv4=getattr(config, "dn42_ipv4", None),
+            dn42_ipv6=getattr(config, "dn42_ipv6", None),
             is_rr=is_rr,
-            node_id=getattr(config, 'node_id', None),  # Send config node_id to CP
-            allow_cn_peers=getattr(config, 'allow_cn_peers', False),
-            supports_ipv4=getattr(config, 'supports_ipv4', True),
-            supports_ipv6=getattr(config, 'supports_ipv6', True),
-            open_for_peer=getattr(config, 'is_open', True),
-            max_peers=getattr(config, 'max_peers', 0),
+            node_id=getattr(config, "node_id", None),  # Send config node_id to CP
+            allow_cn_peers=getattr(config, "allow_cn_peers", False),
+            supports_ipv4=getattr(config, "supports_ipv4", True),
+            supports_ipv6=getattr(config, "supports_ipv6", True),
+            open_for_peer=getattr(config, "is_open", True),
+            max_peers=getattr(config, "max_peers", 0),
             ebgp_public_key=wg_executor.public_key,  # Report eBGP WG public key
         )
         if registration:
             logger.info(f"✅ Node registered: {registration.get('status')}")
             # Use node_id from Control Plane (authoritative source)
-            cp_node_id = registration.get('numeric_node_id')
+            cp_node_id = registration.get("numeric_node_id")
             if cp_node_id and 1 <= cp_node_id <= 62:
                 node_id = cp_node_id
                 logger.info(f"Using node_id={node_id} from Control Plane")
@@ -196,7 +199,7 @@ async def main():
                 _persist_node_id(config_path, node_id)
     except Exception as e:
         logger.warning(f"Node registration failed (will retry): {e}")
-    
+
     # Validate node_id before proceeding - FAIL EARLY, no dangerous fallback!
     if not node_id or node_id < 1 or node_id > 62:
         logger.error(f"Invalid node_id={node_id}: must be 1-62 for /26 subnet")
@@ -204,7 +207,7 @@ async def main():
         logger.error("Please ensure Control Plane is reachable and node is registered.")
         logger.error("Or manually set 'node_id' in config.json to a unique value (1-62).")
         sys.exit(1)  # Fail early instead of causing duplicate IP conflicts
-    
+
     # Create mesh sync for IGP underlay (P2P mode)
     mesh_sync = MeshSync(
         client=client,
@@ -212,17 +215,17 @@ async def main():
         bird_executor=bird_executor,
         node_id=node_id,
     )
-    
+
     # Configure loopback interface with DN42 IPs
     logger.info("Configuring loopback interface...")
     loopback = LoopbackExecutor(
-        dn42_ipv4_prefix=getattr(config, 'dn42_ipv4_prefix', '172.22.188.0/26'),
-        dn42_ipv6_prefix=getattr(config, 'dn42_ipv6_prefix', 'fd00:4242:7777::/48'),
+        dn42_ipv4_prefix=getattr(config, "dn42_ipv4_prefix", "172.22.188.0/26"),
+        dn42_ipv6_prefix=getattr(config, "dn42_ipv6_prefix", "fd00:4242:7777::/48"),
     )
     loopback.ensure_interface_up()
     loopback.setup_loopback(node_id)
     logger.info("✅ Loopback interface configured")
-    
+
     # Initialize mesh network (generate keys, register with CP)
     logger.info("Initializing mesh network...")
     try:
@@ -230,7 +233,7 @@ async def main():
         logger.info("✅ Mesh network initialized")
     except Exception as e:
         logger.warning(f"Mesh sync failed (will retry): {e}")
-    
+
     # Initialize iBGP peer configurations
     logger.info("Syncing iBGP configurations...")
     ibgp_sync = IBGPSync(
@@ -243,23 +246,23 @@ async def main():
         logger.info("✅ iBGP peers configured")
     except Exception as e:
         logger.warning(f"iBGP sync failed (will retry): {e}")
-    
+
     # Set mesh_sync on daemon for periodic sync (retry failed tunnels)
     daemon.mesh_sync = mesh_sync
-    
+
     # Initialize latency probe for automatic community updates
     latency_probe = None
-    if getattr(config, 'enable_latency_probe', True):
+    if getattr(config, "enable_latency_probe", True):
         try:
             from services.latency_probe import LatencyProbe
             from services.manager import CommunityManager
-            
+
             latency_probe = LatencyProbe(
-                probe_interval=getattr(config, 'latency_probe_interval', 300),
+                probe_interval=getattr(config, "latency_probe_interval", 300),
             )
-            
+
             community_manager = CommunityManager(bird_ctl=config.bird_ctl)
-            
+
             # Set callback to update community settings when latency changes
             def on_latency_update(asn: int, tier: int, rtt_ms: float):
                 settings = community_manager.get_peer_communities(asn)
@@ -267,13 +270,13 @@ async def main():
                 settings["last_rtt"] = round(rtt_ms, 2)
                 community_manager.set_peer_communities(asn, settings)
                 logger.info(f"AS{asn} latency updated: {rtt_ms:.2f}ms (tier {tier})")
-            
+
             latency_probe.set_update_callback(on_latency_update)
             await latency_probe.start()
             logger.info("✅ Latency probe daemon started")
         except Exception as e:
             logger.warning(f"Latency probe initialization failed: {e}")
-    
+
     # Create API server
     api_app = create_app()
     api_runner = web.AppRunner(api_app)
@@ -281,19 +284,19 @@ async def main():
     api_site = web.TCPSite(api_runner, config.api_host, config.api_port)
     await api_site.start()
     logger.info(f"✅ API server started on port {config.api_port}")
-    
+
     # Handle shutdown signals
     loop = asyncio.get_event_loop()
-    
+
     def shutdown_handler():
         logger.info("Shutdown signal received")
         asyncio.create_task(daemon.stop())
         if latency_probe:
             asyncio.create_task(latency_probe.stop())
-    
+
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, shutdown_handler)
-    
+
     # Run daemon
     try:
         await daemon.run()
@@ -305,7 +308,7 @@ async def main():
             await latency_probe.stop()
         await api_runner.cleanup()
         await client.close()
-    
+
     logger.info("MoeNet DN42 Agent stopped")
 
 

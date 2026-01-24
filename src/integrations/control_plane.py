@@ -1,6 +1,7 @@
 """
 MoeNet DN42 Agent - Control Plane Client
 """
+
 import hashlib
 import json
 import logging
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class ControlPlaneClient:
     """HTTP client for control-plane API."""
-    
+
     def __init__(
         self,
         base_url: str,
@@ -26,7 +27,7 @@ class ControlPlaneClient:
         self.api_token = api_token
         self.timeout = aiohttp.ClientTimeout(total=timeout)
         self._session: Optional[aiohttp.ClientSession] = None
-    
+
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
             headers = {"Content-Type": "application/json"}
@@ -34,11 +35,11 @@ class ControlPlaneClient:
                 headers["Authorization"] = f"Bearer {self.api_token}"
             self._session = aiohttp.ClientSession(headers=headers, timeout=self.timeout)
         return self._session
-    
+
     async def close(self):
         if self._session and not self._session.closed:
             await self._session.close()
-    
+
     async def get_config(self) -> Optional[dict[str, Any]]:
         """Fetch configuration from control-plane."""
         try:
@@ -52,8 +53,10 @@ class ControlPlaneClient:
         except Exception as e:
             logger.error(f"Control-plane error: {e}")
             return None
-    
-    async def send_heartbeat(self, agent_version: str, config_hash: Optional[str], status: dict) -> bool:
+
+    async def send_heartbeat(
+        self, agent_version: str, config_hash: Optional[str], status: dict
+    ) -> bool:
         """Send heartbeat to control-plane."""
         try:
             session = await self._get_session()
@@ -63,12 +66,14 @@ class ControlPlaneClient:
                 "config_version_hash": config_hash,
                 "status": status,
             }
-            async with session.post(f"{self.base_url}/api/v1/agent/heartbeat", json=payload) as resp:
+            async with session.post(
+                f"{self.base_url}/api/v1/agent/heartbeat", json=payload
+            ) as resp:
                 return resp.status == 200
         except Exception as e:
             logger.error(f"Heartbeat error: {e}")
             return False
-    
+
     async def report_state(self, last_state: dict) -> bool:
         """Report last_state.json for disaster recovery."""
         try:
@@ -79,7 +84,7 @@ class ControlPlaneClient:
         except Exception as e:
             logger.error(f"State report error: {e}")
             return False
-    
+
     async def get_mesh_config(self) -> Optional[dict[str, Any]]:
         """Fetch mesh network configuration."""
         try:
@@ -93,7 +98,7 @@ class ControlPlaneClient:
         except Exception as e:
             logger.error(f"Mesh config error: {e}")
             return None
-    
+
     async def register_mesh_key(self, public_key: str) -> bool:
         """Register mesh WireGuard public key with control plane."""
         try:
@@ -105,7 +110,7 @@ class ControlPlaneClient:
         except Exception as e:
             logger.error(f"Mesh key registration error: {e}")
             return False
-    
+
     async def register_node(
         self,
         agent_version: str,
@@ -163,7 +168,7 @@ class ControlPlaneClient:
                 payload["provider"] = provider
             if max_peers is not None and max_peers > 0:
                 payload["max_peers"] = max_peers
-            
+
             async with session.post(f"{self.base_url}/api/v1/agent/register", json=payload) as resp:
                 if resp.status == 200:
                     result = await resp.json()
@@ -174,7 +179,7 @@ class ControlPlaneClient:
         except Exception as e:
             logger.error(f"Registration error: {e}")
             return None
-    
+
     @staticmethod
     def compute_config_hash(config: dict) -> str:
         config_str = json.dumps(config.get("peers", []), sort_keys=True)
